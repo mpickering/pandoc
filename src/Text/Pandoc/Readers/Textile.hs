@@ -50,7 +50,6 @@ TODO : refactor common patterns across readers :
 
 
 module Text.Pandoc.Readers.Textile ( readTextile) where
-
 import Debug.Trace
 import Text.Pandoc.Definition
 import qualified Text.Pandoc.Builder as B
@@ -72,7 +71,7 @@ readTextile :: ReaderOptions -- ^ Reader options
             -> String       -- ^ String to parse (assuming @'\n'@ line endings)
             -> Pandoc
 readTextile opts s =
-  (readWith parseTextile) def{ stateOptions = opts } (' ' : s ++ "\n\n")
+  (readWith parseTextile) def{ stateOptions = opts } (s ++ "\n\n")
 
 
 -- | Generate a Pandoc ADT from a textile document
@@ -132,8 +131,11 @@ blockParsers = [ codeBlock
                , rawLaTeXBlock'
                , maybeExplicitBlock "table" table
                , maybeExplicitBlock "p" para
+               , endBlock
                ]
 
+endBlock :: Parser [Char] ParserState Block
+endBlock = string "\n\n" >> return Null
 -- | Any block in the order of definition of blockParsers
 block :: Parser [Char] ParserState Block
 block = choice blockParsers <?> "block"
@@ -181,7 +183,7 @@ header = try $ do
   attr <- attributes
   char '.'
   lookAhead whitespace
-  name <- normalizeSpaces . B.toList . mconcat <$> manyTill inline blockBreak
+  name <- B.toList . B.trimInlines . mconcat <$> manyTill inline blockBreak
   attr' <- registerHeader attr (B.fromList name)
   return $ Header level attr' name
 
@@ -278,7 +280,7 @@ definitionListItem = try $ do
           optional whitespace >> newline
           s <- many1Till anyChar (try (string "=:" >> newline))
           -- this ++ "\n\n" does not look very good
-          ds <- parseFromString parseBlocks (s ++ "\n\n")
+          ds <- parseFromString parseBlocks (s ++ "\n\n\n")
           return [ds]
 
 -- | This terminates a block such as a paragraph. Because of raw html
@@ -307,7 +309,7 @@ rawLaTeXBlock' = do
 para :: Parser [Char] ParserState Block
 para = do
     a <-  manyTill inline blockBreak
-    return $ (Para . normalizeSpaces . B.toList . mconcat) a
+    return $ (Para . B.toList . B.trimInlines . mconcat) a
 
 -- Tables
 
@@ -367,12 +369,13 @@ maybeExplicitBlock name blk = try $ do
 
 -- | Any inline element
 inline :: Parser [Char] ParserState B.Inlines
-inline = choice inlineParsers <?> "inline"
+inline = do
+    choice inlineParsers <?> "inline"
 
 -- | Inline parsers tried in order
 inlineParsers :: [Parser [Char] ParserState B.Inlines]
-inlineParsers = [ str
-                , inlineMarkup
+inlineParsers = [ inlineMarkup
+                , str
                 , whitespace
                 , endline
                 , code
@@ -593,21 +596,38 @@ surrounded :: Parser [Char] st t   -- ^ surrounding parser
 	    -> Parser [Char] st [a]
 surrounded border = enclosed (border *> notFollowedBy (oneOf " \t\n\r")) (try border)
 
--- | Inlines are most of the time of the same form
+
 simpleInline :: Parser [Char] ParserState t           -- ^ surrounding parser
                 -> (B.Inlines -> B.Inlines)       -- ^ Inline constructor
                 -> Parser [Char] ParserState B.Inlines   -- ^ content parser (to be used repeatedly)
-simpleInline border construct = try $ do
+simpleInline border construct = groupedSimpleInline border construct <|> ungroupedSimpleInline border construct 
+
+ungroupedSimpleInline :: Parser [Char] ParserState t           -- ^ surrounding parser
+                -> (B.Inlines -> B.Inlines)       -- ^ Inline constructor
+                -> Parser [Char] ParserState B.Inlines   -- ^ content parser (to be used repeatedly)
+ungroupedSimpleInline border construct = try $ do
   st <- getState
-  before <- if stateQuoteContext st == NoQuote then 
-                (<>) <$> (whitespace <|> (string "\n" >> return (B.str "\n"))) 
-            else return id 
-  body <- traceShow (stateQuoteContext st) $ surrounded border inlineWithAttribute 
-  return $  before (construct $ mconcat body) 
+  pos <- getPosition
+  isWhitespace <- option False (whitespace >> return True)
+  let before =  if isWhitespace then ((<>) B.space) else id 
+  guard ((stateQuoteContext st /= NoQuote) || (sourceColumn pos == 1) || isWhitespace)
+  body <- surrounded border inlineWithAttribute
+  lookAhead (notFollowedBy alphaNum)
+  return $ before (construct $ mconcat body) 
   where 
     inlineWithAttribute = (try $ optional attributes) >> notFollowedBy (string "\n\n") 
         >> (withQuoteContextI InSingleQuote inline)
+
+
+groupedSimpleInline :: Parser [Char] ParserState t 
+                  -> (B.Inlines -> B.Inlines)
+                  -> Parser [Char] ParserState B.Inlines 
+groupedSimpleInline border construct = try $ do
+   char '[' 
+   withQuoteContextI InSingleQuote (simpleInline border construct) >>~ (try $ char ']')
+
     
+
 
 -- | Create a singleton list
 singleton :: a -> [a]
