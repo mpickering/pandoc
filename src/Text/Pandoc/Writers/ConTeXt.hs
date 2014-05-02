@@ -128,7 +128,7 @@ blockToConTeXt :: Block
 blockToConTeXt Null = return empty
 blockToConTeXt (Plain lst) = inlineListToConTeXt lst
 -- title beginning with fig: indicates that the image is a figure
-blockToConTeXt (Para [Image txt (src,'f':'i':'g':':':_)]) = do
+blockToConTeXt (Para [Image txt (Relative (src,'f':'i':'g':':':_))]) = do
   capt <- inlineListToConTeXt txt
   return $ blankline $$ "\\placefigure" <> braces capt <>
            braces ("\\externalfigure" <> brackets (text src)) <> blankline
@@ -311,11 +311,13 @@ inlineToConTeXt (Link txt          (src, _))      = do
                   else brackets empty <> brackets label)
            <> "\\from"
            <> brackets (text ref)
-inlineToConTeXt (Image _ (src, _)) = do
+inlineToConTeXt (Image _ (Relative (src, _))) = do
   let src' = if isURI src
                 then src
                 else unEscapeString src
   return $ braces $ "\\externalfigure" <> brackets (text src')
+inlineToConTeXt (Image alt (Encoded _)) = do
+  inlineToConTeXt (Strong (Str "Embedded Image:" : alt))
 inlineToConTeXt (Note contents) = do
   contents' <- blockListToConTeXt contents
   let codeBlock x@(CodeBlock _ _) = [x]

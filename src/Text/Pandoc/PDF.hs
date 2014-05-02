@@ -42,7 +42,8 @@ import Data.Digest.Pure.SHA (showDigest, sha1)
 import System.Environment
 import Control.Monad (unless)
 import Data.List (isInfixOf)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
+import qualified Data.ByteString.Base64 as B64
 import qualified Text.Pandoc.UTF8 as UTF8
 import Text.Pandoc.Definition
 import Text.Pandoc.Walk (walkM)
@@ -88,6 +89,7 @@ handleImage' :: Maybe String
              -> FilePath
              -> Inline
              -> IO Inline
+<<<<<<< HEAD
 handleImage' baseURL tmpdir (Image ils (src,tit)) = do
     exists <- doesFileExist src
     if exists
@@ -105,6 +107,34 @@ handleImage' baseURL tmpdir (Image ils (src,tit)) = do
               _ -> do
                 warn $ "Could not find image `" ++ src ++ "', skipping..."
                 return $ Image ils (src,tit)
+=======
+handleImage' baseURL tmpdir (Image ils t) = do
+    case t of
+      Relative (src, tit) -> do
+        exists <- doesFileExist src
+        if exists
+          then return $ Image ils (Relative (src,tit))
+          else do
+            res <- fetchItem baseURL src
+            case res of
+                  Right (contents, Just mime) -> do
+                    let ext = fromMaybe (takeExtension src) $
+                             extensionFromMimeType mime
+                    let basename = UTF8.toString $ B64.encode $ UTF8.fromString src
+                    let fname = tmpdir </> basename <.> ext
+                    BS.writeFile fname contents
+                    return $ Image ils (Relative (fname,tit))
+                  _ -> do
+                    warn $ "Could not find image `" ++ src ++ "', skipping..."
+                    return $ Image ils (Relative (src,tit))
+      Encoded (mime, b64) -> do
+        let bs  = unByteString64 b64
+        let tit = UTF8.toString $ BS.take 10 bs
+        let ext = fromJust $ extensionFromMimeType mime
+        let fname = tmpdir </> tit <.> ext
+        BS.writeFile fname bs
+        return $ Image ils (Relative (fname, tit))
+>>>>>>> fb79dd9... Made suitable changes to reflect changes to the Image datatype
 handleImage' _ _ x = return x
 
 tex2pdf' :: FilePath                        -- ^ temp directory for output

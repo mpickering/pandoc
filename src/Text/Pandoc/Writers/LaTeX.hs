@@ -41,7 +41,7 @@ import Data.List ( (\\), isSuffixOf, isInfixOf,
                    isPrefixOf, intercalate, intersperse )
 import Data.Char ( toLower, isPunctuation, isAscii, isLetter, isDigit, ord )
 import Data.Maybe ( fromMaybe )
-import Control.Applicative ((<|>))
+import Control.Applicative ((<|>), (<$>))
 import Control.Monad.State
 import Text.Pandoc.Pretty
 import Text.Pandoc.Slides
@@ -310,11 +310,11 @@ blockToLaTeX (Div (_,classes,_) bs) = do
 blockToLaTeX (Plain lst) =
   inlineListToLaTeX $ dropWhile isLineBreakOrSpace lst
 -- title beginning with fig: indicates that the image is a figure
-blockToLaTeX (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
+blockToLaTeX (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
   capt <- if null txt
              then return empty
              else (\c -> "\\caption" <> braces c) `fmap` inlineListToLaTeX txt
-  img <- inlineToLaTeX (Image txt (src,tit))
+  img <- inlineToLaTeX (Image txt (Relative (src,tit)))
   return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ img $$
            capt $$ "\\end{figure}"
 -- . . . indicates pause in beamer slides
@@ -761,13 +761,18 @@ inlineToLaTeX (Link txt (src, _)) =
                 src' <- stringToLaTeX URLString src
                 return $ text ("\\href{" ++ src' ++ "}{") <>
                          contents <> char '}'
-inlineToLaTeX (Image _ (source, _)) = do
+inlineToLaTeX (Image _ (Relative (source, _))) = do
   modify $ \s -> s{ stGraphics = True }
   let source' = if isURI source
                    then source
                    else unEscapeString source
   source'' <- stringToLaTeX URLString source'
   return $ "\\includegraphics" <> braces (text source'')
+inlineToLaTeX (Image alt (Encoded _)) = do
+  let alt' = Str "Embedded Image" : alt
+  capt <- (\c -> "\\caption" <> braces c) <$> inlineListToLaTeX alt'
+  return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ 
+           capt $$ "\\end{figure}"
 inlineToLaTeX (Note contents) = do
   inMinipage <- gets stInMinipage
   modify (\s -> s{stInNote = True})

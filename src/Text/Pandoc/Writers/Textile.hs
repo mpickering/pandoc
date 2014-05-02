@@ -112,9 +112,9 @@ blockToTextile opts (Plain inlines) =
   inlineListToTextile opts inlines
 
 -- title beginning with fig: indicates that the image is a figure
-blockToTextile opts (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
+blockToTextile opts (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
   capt <- blockToTextile opts (Para txt)
-  im <- inlineToTextile opts (Image txt (src,tit))
+  im <- inlineToTextile opts (Image txt (Relative (src,tit)))
   return $ im ++ "\n" ++ capt
 
 blockToTextile opts (Para inlines) = do
@@ -421,7 +421,7 @@ inlineToTextile opts (Link txt (src, _)) = do
                 _           -> inlineListToTextile opts txt
   return $ "\"" ++ label ++ "\":" ++ src
 
-inlineToTextile opts (Image alt (source, tit)) = do
+inlineToTextile opts (Image alt (Relative (source, tit))) = do
   alt' <- inlineListToTextile opts alt
   let txt = if null tit
                then if null alt'
@@ -429,6 +429,8 @@ inlineToTextile opts (Image alt (source, tit)) = do
                        else "(" ++ alt' ++ ")"
                else "(" ++ tit ++ ")"
   return $ "!" ++ source ++ txt ++ "!"
+inlineToTextile opts (Image alt (Encoded _)) = do
+  inlineListToTextile opts (Str "Embedded Image: " : alt)
 
 inlineToTextile opts (Note contents) = do
   curNotes <- liftM stNotes get

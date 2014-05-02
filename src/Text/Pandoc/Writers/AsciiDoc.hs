@@ -123,8 +123,8 @@ blockToAsciiDoc _ Null = return empty
 blockToAsciiDoc opts (Plain inlines) = do
   contents <- inlineListToAsciiDoc opts inlines
   return $ contents <> cr
-blockToAsciiDoc opts (Para [Image alt (src,'f':'i':'g':':':tit)]) =
-  blockToAsciiDoc opts (Para [Image alt (src,tit)])
+blockToAsciiDoc opts (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) =
+  blockToAsciiDoc opts (Para [Image alt (Relative (src,tit))])
 blockToAsciiDoc opts (Para inlines) = do
   contents <- inlineListToAsciiDoc opts inlines
   -- escape if para starts with ordered list marker
@@ -373,7 +373,7 @@ inlineToAsciiDoc opts (Link txt (src, _tit)) = do
   return $ if useAuto
               then text srcSuffix
               else prefix <> text src <> "[" <> linktext <> "]"
-inlineToAsciiDoc opts (Image alternate (src, tit)) = do
+inlineToAsciiDoc opts (Image alternate (Relative (src, tit))) = do
 -- image:images/logo.png[Company logo, title="blah"]
   let txt = if (null alternate) || (alternate == [Str ""])
                then [Str "image"]
@@ -383,6 +383,8 @@ inlineToAsciiDoc opts (Image alternate (src, tit)) = do
                      then empty
                      else text $ ",title=\"" ++ tit ++ "\""
   return $ "image:" <> text src <> "[" <> linktext <> linktitle <> "]"
+inlineToAsciiDoc opts (Image alt (Encoded _)) = do
+  inlineListToAsciiDoc opts (Str "Embedded Image: " : alt)
 inlineToAsciiDoc opts (Note [Para inlines]) =
   inlineToAsciiDoc opts (Note [Plain inlines])
 inlineToAsciiDoc opts (Note [Plain inlines]) = do

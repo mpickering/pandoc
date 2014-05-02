@@ -953,11 +953,11 @@ rawLaTeXInline = do
 
 addImageCaption :: Blocks -> LP Blocks
 addImageCaption = walkM go
-  where go (Image alt (src,tit)) = do
+  where go (Image alt (Relative (src,tit))) = do
           mbcapt <- stateCaption <$> getState
           case mbcapt of
-               Just ils -> return (Image (toList ils) (src, "fig:"))
-               Nothing  -> return (Image alt (src,tit))
+               Just ils -> return (Image (toList ils) (Relative (src, "fig:")))
+               Nothing  -> return (Image alt (Relative (src,tit)))
         go x = return x
 
 addTableCaption :: Blocks -> LP Blocks
