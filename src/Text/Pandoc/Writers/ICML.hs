@@ -415,7 +415,10 @@ inlineToICML opts style (Link lst (url, title)) = do
                 cont  = inTags True "HyperlinkTextSource"
                          [("Self","htss-"++show ident), ("Name",title), ("Hidden","false")] content
             in  (cont, newst)
-inlineToICML opts style (Image alt target) = imageICML opts style alt target
+inlineToICML opts style (Image alt target) = 
+  case target of 
+    Relative t -> imageICML opts style alt t
+    Encoded _ -> inlineToICML opts style (Strong $ Str "Embedded Image":alt)
 inlineToICML opts style (Note lst) = footnoteToICML opts style lst
 inlineToICML opts style (Span _ lst) = inlinesToICML opts style lst
 

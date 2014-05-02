@@ -386,7 +386,10 @@ inlineToOpenDocument o ils
                                 then return $ text s
                                 else return empty
     | Link  l (s,t) <- ils = mkLink s t <$> inlinesToOpenDocument o l
-    | Image _ (s,t) <- ils = mkImg  s t
+    | Image alt t   <- ils = 
+      case t of 
+        Relative (src, target) -> mkImg src target
+        Encoded _ -> inlineToOpenDocument o (Strong $ Str "Embedded Image" : alt)
     | Note        l <- ils = mkNote l
     | otherwise            = return empty
     where

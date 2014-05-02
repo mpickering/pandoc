@@ -885,11 +885,10 @@ para = try $ do
             return $ do
               result' <- result
               case B.toList result' of
-                   [Image alt (src,tit)]
+                   [Image alt (Relative (src,tit))]
                      | Ext_implicit_figures `Set.member` exts ->
                         -- the fig: at beginning of title indicates a figure
-                        return $ B.para $ B.singleton
-                               $ Image alt (src,'f':'i':'g':':':tit)
+                        return $ B.para $ B.image src ("fig:" ++ tit) (B.fromList alt)
                    _ -> return $ B.para result'
 
 plain :: MarkdownParser (F Blocks)

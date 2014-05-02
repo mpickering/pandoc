@@ -331,8 +331,8 @@ blockToMarkdown opts (Plain inlines) = do
                      else contents
   return $ contents' <> cr
 -- title beginning with fig: indicates figure
-blockToMarkdown opts (Para [Image alt (src,'f':'i':'g':':':tit)]) =
-  blockToMarkdown opts (Para [Image alt (src,tit)])
+blockToMarkdown opts (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) =
+  blockToMarkdown opts (Para [Image alt (Relative (src,tit))])
 blockToMarkdown opts (Para inlines) =
   (<> blankline) `fmap` blockToMarkdown opts (Plain inlines)
 blockToMarkdown opts (RawBlock f str)
@@ -790,13 +790,16 @@ inlineToMarkdown opts (Link txt (src, tit)) = do
                            in  first <> second
                       else "[" <> linktext <> "](" <>
                            text src <> linktitle <> ")"
-inlineToMarkdown opts (Image alternate (source, tit)) = do
-  let txt = if null alternate || alternate == [Str source]
-                                 -- to prevent autolinks
-               then [Str ""]
-               else alternate
-  linkPart <- inlineToMarkdown opts (Link txt (source, tit))
-  return $ "!" <> linkPart
+inlineToMarkdown opts (Image alternate l) = 
+  case l of 
+    Relative (source, tit) -> do
+      let txt = if null alternate || alternate == [Str source]
+                             -- to prevent autolinks
+             then [Str ""]
+              else alternate
+      linkPart <- inlineToMarkdown opts (Link txt (source, tit))
+      return $ "!" <> linkPart
+    Encoded _ -> inlineToMarkdown opts (Strong $ Str "Embedded Image:" : alternate) 
 inlineToMarkdown opts (Note contents) = do
   modify (\st -> st{ stNotes = contents : stNotes st })
   st <- get

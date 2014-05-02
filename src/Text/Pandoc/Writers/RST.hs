@@ -168,7 +168,7 @@ blockToRST (Div attr bs) = do
   return $ blankline <> startTag $+$ contents $+$ endTag $$ blankline
 blockToRST (Plain inlines) = inlineListToRST inlines
 -- title beginning with fig: indicates that the image is a figure
-blockToRST (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
+blockToRST (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
   capt <- inlineListToRST txt
   let fig = "figure:: " <> text src
   let alt = ":alt: " <> if null tit then capt else text tit
@@ -403,7 +403,7 @@ inlineToRST (Link [Str str] (src, _))
        else src == escapeURI str = do
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   return $ text srcSuffix
-inlineToRST (Link [Image alt (imgsrc,imgtit)] (src, _tit)) = do
+inlineToRST (Link [Image alt (Relative (imgsrc,imgtit))] (src, _tit)) = do
   label <- registerImage alt (imgsrc,imgtit) (Just src)
   return $ "|" <> label <> "|"
 inlineToRST (Link txt (src, tit)) = do
@@ -421,9 +421,13 @@ inlineToRST (Link txt (src, tit)) = do
                    modify $ \st -> st { stLinks = (txt,(src,tit)):refs }
                    return $ "`" <> linktext <> "`_"
     else return $ "`" <> linktext <> " <" <> text src <> ">`__"
-inlineToRST (Image alternate (source, tit)) = do
+inlineToRST (Image alternate (Relative (source, tit))) = do
   label <- registerImage alternate (source,tit) Nothing
   return $ "|" <> label <> "|"
+inlineToRST (Image alt _) = do
+  let alt' = Str "Embedded Image:" : alt
+  txt <- inlineListToRST alt'
+  return $ "|" <> txt <> "|" 
 inlineToRST (Note contents) = do
   -- add to notes in state
   notes <- get >>= return . stNotes
@@ -433,7 +437,7 @@ inlineToRST (Note contents) = do
 
 registerImage :: [Inline] -> Target -> Maybe String -> State WriterState Doc
 registerImage alt (src,tit) mbtarget = do
-  pics <- get >>= return . stImages
+  pics <- stImages <$> get 
   txt <- case lookup alt pics of
                Just (s,t,mbt) | (s,t,mbt) == (src,tit,mbtarget) -> return alt
                _ -> do
