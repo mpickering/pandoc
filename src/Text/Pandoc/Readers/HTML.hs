@@ -1,3 +1,4 @@
+
 {-
 Copyright (C) 2006-2014 John MacFarlane <jgm@berkeley.edu>
 
@@ -45,12 +46,13 @@ import Text.Pandoc.Shared
 import Text.Pandoc.Options
 import Text.Pandoc.Parsing
 import Data.Maybe ( fromMaybe, isJust )
-import Data.List ( intercalate )
+import Data.List ( intercalate, isPrefixOf )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
 import Control.Applicative ( (<$>), (<$), (<*) )
 import Data.Monoid
 import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
+import qualified Data.ByteString.Char8 as BS 
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -369,9 +371,9 @@ pQ = do
                              then InSingleQuote
                              else InDoubleQuote
   let constructor = case quoteType of
-                            SingleQuote -> B.singleQuoted 
+                            SingleQuote -> B.singleQuoted
                             DoubleQuote -> B.doubleQuoted
-  withQuoteContext innerQuoteContext $ 
+  withQuoteContext innerQuoteContext $
     pInlinesInTags "q" constructor
 
 pEmph :: TagParser Inlines
@@ -406,15 +408,21 @@ pLink = try $ do
   let url = fromAttrib "href" tag
   let title = fromAttrib "title" tag
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
-  return $ B.link (escapeURI url) title lab 
+  return $ B.link (escapeURI url) title lab
 
 pImage :: TagParser Inlines
 pImage = do
   tag <- pSelfClosing (=="img") (isJust . lookup "src")
   let url = fromAttrib "src" tag
   let title = fromAttrib "title" tag
-  let alt = fromAttrib "alt" tag
-  return $ B.image (escapeURI url) title (B.text alt)
+  let alt = B.text $ fromAttrib "alt" tag
+  if "data:" `isPrefixOf` url then do
+    let strippedURL = drop 5 url
+    let mime = takeWhile (/= ';') strippedURL
+    let imageData = BS.pack $ tail $ dropWhile (/= ',') strippedURL
+    return $ B.base64image imageData mime alt  
+    else
+      return $ B.image (escapeURI url) title alt
 
 pCode :: TagParser Inlines
 pCode = try $ do
