@@ -407,20 +407,20 @@ treatAsImage fp =
 blockToHtml :: WriterOptions -> Block -> State WriterState Html
 blockToHtml _ Null = return mempty
 blockToHtml opts (Plain lst) = inlineListToHtml opts lst
--- title beginning with fig: indicates that the image is a figure
---blockToHtml opts (Para [Image txt (Relative (s,'f':'i':'g':':':tit))]) = do
---  img <- inlineToHtml opts (Image txt (Relative (s,tit)))
---  let tocapt = if writerHtml5 opts
---                  then H5.figcaption
---                  else H.p ! A.class_ "caption"
---  capt <- if null txt
---             then return mempty
---             else tocapt `fmap` inlineListToHtml opts txt
---  return $ if writerHtml5 opts
---              then H5.figure $ mconcat
---                    [nl opts, img, capt, nl opts]
---              else H.div ! A.class_ "figure" $ mconcat
---                   [nl opts, img, capt, nl opts]
+blockToHtml opts (Figure _ bs cs) = do
+  img <- inlineListToHtml opts cs
+
+  let tocapt = if writerHtml5 opts
+                  then H5.figcaption
+                  else H.p ! A.class_ "caption"
+  capt <- if null bs
+             then return mempty
+             else tocapt `fmap` blockListToHtml opts bs
+  return $ if writerHtml5 opts
+              then H5.figure $ mconcat
+                    [nl opts, img, capt, nl opts]
+              else H.div ! A.class_ "figure" $ mconcat
+                   [nl opts, img, capt, nl opts]
 blockToHtml opts (Para lst) = do
   contents <- inlineListToHtml opts lst
   return $ H.p contents

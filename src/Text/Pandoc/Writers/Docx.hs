@@ -460,12 +460,12 @@ blockToOpenXML opts (Header lev (ident,_,_) lst) = do
 blockToOpenXML opts (Plain lst) = withParaProp (pStyle "Compact")
   $ blockToOpenXML opts (Para lst)
 -- title beginning with fig: indicates that the image is a figure
---blockToOpenXML opts (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) = do
---  paraProps <- getParaProps False
---  contents <- inlinesToOpenXML opts [Image alt (Relative (src,tit))]
---  captionNode <- withParaProp (pStyle "ImageCaption")
---                 $ blockToOpenXML opts (Para alt)
---  return $ mknode "w:p" [] (paraProps ++ contents) : captionNode
+blockToOpenXML opts (Figure as bs cs) = do
+  paraProps <- getParaProps False
+  contents <- inlinesToOpenXML opts cs
+  captionNode <- withParaProp (pStyle "FigureCaption")
+                 $ blocksToOpenXML opts bs
+  return $ mknode "w:p" [] (paraProps ++ contents) : captionNode
 -- fixDisplayMath sometimes produces a Para [] as artifact
 blockToOpenXML _ (Para []) = return []
 blockToOpenXML opts (Para lst) = do

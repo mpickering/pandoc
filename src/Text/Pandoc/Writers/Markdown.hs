@@ -330,9 +330,8 @@ blockToMarkdown opts (Plain inlines) = do
                      then text $ escapeDelimiter rendered
                      else contents
   return $ contents' <> cr
--- title beginning with fig: indicates figure
---blockToMarkdown opts (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) =
---  blockToMarkdown opts (Para [Image alt (Relative (src,tit))])
+blockToMarkdown opts (Figure _ _ cs) =
+  blockToMarkdown opts (Para cs)
 blockToMarkdown opts (Para inlines) =
   (<> blankline) `fmap` blockToMarkdown opts (Plain inlines)
 blockToMarkdown opts (RawBlock f str)

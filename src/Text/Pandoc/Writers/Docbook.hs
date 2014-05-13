@@ -155,19 +155,11 @@ blockToDocbook _ Null = empty
 blockToDocbook opts (Div _ bs) = blocksToDocbook opts $ map plainToPara bs
 blockToDocbook _ (Header _ _ _) = empty -- should not occur after hierarchicalize
 blockToDocbook opts (Plain lst) = inlinesToDocbook opts lst
--- title beginning with fig: indicates that the image is a figure
---blockToDocbook opts (Para [Image txt (Relative (src,'f':'i':'g':':':_))]) =
---  let alt  = inlinesToDocbook opts txt
---      capt = if null txt
---                then empty
---                else inTagsSimple "title" alt
---  in  inTagsIndented "figure" $
---        capt $$
---        (inTagsIndented "mediaobject" $
---           (inTagsIndented "imageobject"
---             (selfClosingTag "imagedata" [("fileref",src)])) $$
---           inTagsSimple "textobject" (inTagsSimple "phrase" alt))
->>>>>>> 3944f31... Figure changes
+blockToDocbook opts (Figure _ bs cs) =
+  let alt  = inTagsSimple "title" $ blocksToDocbook opts bs
+      cont = inlinesToDocbook opts cs
+  in  inTagsIndented "figure" $
+        alt $$ cont
 blockToDocbook opts (Para lst)
   | hasLineBreaks lst = flush $ nowrap $ inTagsSimple "literallayout" $ inlinesToDocbook opts lst
   | otherwise         = inTagsIndented "para" $ inlinesToDocbook opts lst

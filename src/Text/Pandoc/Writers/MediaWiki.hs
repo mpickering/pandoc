@@ -93,14 +93,15 @@ blockToMediaWiki opts (Plain inlines) =
   inlineListToMediaWiki opts inlines
 
 -- title beginning with fig: indicates that the image is a figure
---blockToMediaWiki opts (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
---  capt <- if null txt
---             then return ""
---             else ("|caption " ++) `fmap` inlineListToMediaWiki opts txt
---  let opt = if null txt
---               then ""
---               else "|alt=" ++ if null tit then capt else tit ++ capt
---  return $ "[[Image:" ++ src ++ "|frame|none" ++ opt ++ "]]\n"
+blockToMediaWiki opts (Figure as bs cs) = do
+  capt <- if null bs
+             then return ""
+             else ("|caption " ++) `fmap` blockListToMediaWiki opts bs
+  case cs of
+      (Image alt tit (Relative src)):_ ->
+        return $ "[[Image:" ++ src ++ "|frame|none" ++
+        "|alt=" ++ tit ++ capt ++ "]]\n"
+      _ -> return ""
 
 
 blockToMediaWiki opts (Para inlines) = do

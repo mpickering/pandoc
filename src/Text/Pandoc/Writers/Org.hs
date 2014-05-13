@@ -38,6 +38,7 @@ import Text.Pandoc.Shared
 import Text.Pandoc.Writers.Shared
 import Text.Pandoc.Pretty
 import Text.Pandoc.Templates (renderTemplate')
+import Text.Pandoc.Writers.LaTeX
 import Data.List ( intersect, intersperse, transpose )
 import Control.Monad.State
 import Control.Applicative ( (<$>) )
@@ -116,14 +117,8 @@ blockToOrg (Div attrs bs) = do
            contents $$ blankline $$ "#+BEGIN_HTML" $$
            nest 2 endTag $$ "#+END_HTML" $$ blankline
 blockToOrg (Plain inlines) = inlineListToOrg inlines
--- title beginning with fig: indicates that the image is a figure
---blockToOrg (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
---  capt <- if null txt
---             then return empty
---             else (\c -> "#+CAPTION: " <> c <> blankline) `fmap`
---                    inlineListToOrg txt
---  img <- inlineToOrg (Image txt (Relative (src,tit)))
---  return $ capt <> img
+blockToOrg f@(Figure _ _ _) = 
+  return $ "#+BEGIN_LATEX" $$ nest 1 (text $ writeLaTeX def (Pandoc nullMeta [f])) $$ "#+END_LATEX" 
 blockToOrg (Para inlines) = do
   contents <- inlineListToOrg inlines
   return $ contents <> blankline

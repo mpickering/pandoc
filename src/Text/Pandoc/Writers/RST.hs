@@ -167,12 +167,14 @@ blockToRST (Div attr bs) = do
   let endTag = ".. raw:: html" $+$ nest 3 "</div>"
   return $ blankline <> startTag $+$ contents $+$ endTag $$ blankline
 blockToRST (Plain inlines) = inlineListToRST inlines
--- title beginning with fig: indicates that the image is a figure
---blockToRST (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
---  capt <- inlineListToRST txt
---  let fig = "figure:: " <> text src
---  let alt = ":alt: " <> if null tit then capt else text tit
--- return $ hang 3 ".. " $ fig $$ alt $+$ capt $$ blankline
+blockToRST (Figure _ bs cs) = do
+  capt <- blockListToRST bs
+  case cs of
+    (Image _ title (Relative src)):_ -> do
+      let fig = "figure:: " <> text src
+      let alt = ":alt: " <> if null title then capt else text title
+      return $ hang 3 ".. " $ fig $$ alt $+$ capt $$ blankline
+    _ -> return empty
 blockToRST (Para inlines)
   | LineBreak `elem` inlines = do -- use line block if LineBreaks 
       lns <- mapM inlineListToRST $ splitBy (==LineBreak) inlines

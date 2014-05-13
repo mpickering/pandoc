@@ -111,11 +111,10 @@ blockToTextile opts (Div attr bs) = do
 blockToTextile opts (Plain inlines) =
   inlineListToTextile opts inlines
 
--- title beginning with fig: indicates that the image is a figure
---blockToTextile opts (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
---  capt <- blockToTextile opts (Para txt)
---  im <- inlineToTextile opts (Image txt (Relative (src,tit)))
---  return $ im ++ "\n" ++ capt
+blockToTextile opts (Figure _ bs cs) = do
+  capt <- blockListToTextile opts bs
+  cont <- inlineListToTextile opts cs
+  return $ cont ++ "\n" ++ capt
 
 blockToTextile opts (Para inlines) = do
   useTags <- liftM stUseTags get
