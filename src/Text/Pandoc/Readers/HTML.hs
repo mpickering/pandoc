@@ -30,6 +30,7 @@ Conversion of HTML to 'Pandoc' document.
 -}
 module Text.Pandoc.Readers.HTML ( readHtml
                                 , htmlTag
+                                , srcParser
                                 , htmlInBalanced
                                 , isInlineTag
                                 , isBlockTag
@@ -45,14 +46,16 @@ import Text.Pandoc.Builder (Blocks, Inlines, trimInlines)
 import Text.Pandoc.Shared
 import Text.Pandoc.Options
 import Text.Pandoc.Parsing
-import Data.Maybe ( fromMaybe, isJust )
+import Data.Maybe ( fromMaybe, isJust, maybe )
 import Data.List ( intercalate, isPrefixOf )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
-import Control.Applicative ( (<$>), (<$), (<*) )
+import Control.Applicative ( (<$>), (<$), (<*), (*>) )
 import Data.Monoid
 import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
+import Text.Pandoc.MIME
 import qualified Data.ByteString.Char8 as BS
+import Debug.Trace
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -416,13 +419,15 @@ srcParser = try encoded <|> Relative <$> (many1 anyChar)
 encoded :: Parser String () ImageType
 encoded = do
   string "data:"
-  mime <- option "text/plain" (anyChar `endBy` (lookAhead (char ';')))
-  string ";base64,"
+  mime <- option "text/plain" (try $ many1Till anyChar (char ';'))
+  mime' <- maybe (fail "Invalid mime") (const $ return mime) (extensionFromMimeType mime)
+  sepEndBy attribute (char ';') --Ignores charset, assumes byte64
+  optional $ string "base64"
+  char ','
   bs <- ByteString64 . BS.pack <$> many1 anyChar
   return $ Encoded (mime, bs)
-
-
-
+  where
+    attribute = try (many1 alphaNum *> char '=' *> many1 alphaNum)
 
 pImage :: TagParser Inlines
 pImage = do
