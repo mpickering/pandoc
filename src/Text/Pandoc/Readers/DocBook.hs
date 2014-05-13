@@ -522,9 +522,9 @@ getFigure e = do
               Just t -> getInlines t
               Nothing -> return mempty
   modify $ \st -> st{ dbFigureTitle = tit }
-  res <- getBlocks e
+  res <- getInlines e
   modify $ \st -> st{ dbFigureTitle = mempty }
-  return res
+  return $ figure (para tit) res
 
 -- normalize input, consolidating adjacent Text and CRef elements
 normalizeTree :: [Content] -> [Content]

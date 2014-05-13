@@ -191,6 +191,7 @@ block =  mempty <$ skipMany1 blankline
      <|> table
      <|> header
      <|> hrule
+     <|> image
      <|> orderedList
      <|> bulletList
      <|> definitionList
@@ -486,7 +487,6 @@ inline =  whitespace
       <|> doubleQuotes
       <|> strong
       <|> emph
-      <|> image
       <|> internalLink
       <|> externalLink
       <|> math
@@ -561,15 +561,15 @@ imageIdentifiers :: [MWParser ()]
 imageIdentifiers = [sym (identifier ++ ":") | identifier <- identifiers]
     where identifiers = ["File", "Image", "Archivo", "Datei", "Fichier"]
 
-image :: MWParser Inlines
+image :: MWParser Blocks
 image = try $ do
   sym "[["
   choice imageIdentifiers
   fname <- many1 (noneOf "|]")
-  _ <- many (try $ char '|' *> imageOption)
+  many (try $ char '|' *> imageOption)
   caption <-   (B.str fname <$ sym "]]")
            <|> try (char '|' *> (mconcat <$> manyTill inline (sym "]]")))
-  return $ B.image fname ("fig:" ++ stringify caption) caption
+  return $ B.figure (B.para caption) (B.image fname (stringify caption) caption) 
 
 imageOption :: MWParser String
 imageOption =
