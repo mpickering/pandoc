@@ -63,7 +63,7 @@ arbInline n = frequency $ [ (60, liftM Str realString)
                    , (10,  do x1 <- arbInlines (n-1)
                               x3 <- realString
                               x2 <- liftM escapeURI realString
-                              return $ Image x1 (x2,x3))
+                              return $ Image x1 x3 (Relative x2))
                    , (2,  liftM2 Cite arbitrary (arbInlines 1))
                    , (2,  liftM Note $ resize 3 $ listOf1 $ arbBlock (n-1))
                    ]
