@@ -52,7 +52,7 @@ import Control.Monad ( liftM, guard, when, mzero )
 import Control.Applicative ( (<$>), (<$), (<*) )
 import Data.Monoid
 import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
-import qualified Data.ByteString.Char8 as BS 
+import qualified Data.ByteString.Char8 as BS
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -410,19 +410,30 @@ pLink = try $ do
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
   return $ B.link (escapeURI url) title lab
 
+srcParser :: Parser String () ImageType
+srcParser = try encoded <|> Relative <$> (many1 anyChar)
+
+encoded :: Parser String () ImageType
+encoded = do
+  string "data:"
+  mime <- option "text/plain" (anyChar `endBy` (lookAhead (char ';')))
+  string ";base64,"
+  bs <- ByteString64 . BS.pack <$> many1 anyChar
+  return $ Encoded (mime, bs)
+
+
+
+
 pImage :: TagParser Inlines
 pImage = do
   tag <- pSelfClosing (=="img") (isJust . lookup "src")
   let url = fromAttrib "src" tag
   let title = fromAttrib "title" tag
   let alt = B.text $ fromAttrib "alt" tag
-  if "data:" `isPrefixOf` url then do
-    let strippedURL = drop 5 url
-    let mime = takeWhile (/= ';') strippedURL
-    let imageData = BS.pack $ tail $ dropWhile (/= ',') strippedURL
-    return $ B.base64image imageData mime alt  
-    else
-      return $ B.image (escapeURI url) title alt
+  let target = parse srcParser "" url
+  case target of
+    Left e -> fail (show e)
+    Right t -> return $ B.genImage title alt t
 
 pCode :: TagParser Inlines
 pCode = try $ do

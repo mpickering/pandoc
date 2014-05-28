@@ -325,14 +325,14 @@ inlineToDocbook opts (Link txt (src, _)) =
               then inTags False "link" [("linkend", drop 1 src)]
               else inTags False "ulink" [("url", src)]) $
           inlinesToDocbook opts txt
-inlineToDocbook _ (Image _ (Relative (src, tit))) =
+inlineToDocbook _ (Image _ tit (Relative src)) =
   let titleDoc = if null tit
                    then empty
                    else inTagsIndented "objectinfo" $
                         inTagsIndented "title" (text $ escapeStringForXML tit)
   in  inTagsIndented "inlinemediaobject" $ inTagsIndented "imageobject" $
       titleDoc $$ selfClosingTag "imagedata" [("fileref", src)]
-inlineToDocbook opts (Image alt _) = inlineToDocbook opts (Strong $ Str "Embedded Image" : alt)
+inlineToDocbook opts (Image alt _ _) = inlineToDocbook opts (Strong $ Str "Embedded Image" : alt)
 inlineToDocbook opts (Note contents) =
   inTagsIndented "footnote" $ blocksToDocbook opts contents
 

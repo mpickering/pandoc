@@ -88,12 +88,12 @@ handleImage' :: Maybe String
              -> FilePath
              -> Inline
              -> IO Inline
-handleImage' baseURL tmpdir (Image ils t) = do
+handleImage' baseURL tmpdir (Image ils tit t) = do
     case t of
-      Relative (src, tit) -> do
+      Relative src -> do
         exists <- doesFileExist src
         if exists
-          then return $ Image ils (Relative (src,tit))
+          then return $ Image ils tit (Relative src)
           else do
             res <- fetchItem baseURL src
             case res of
@@ -103,17 +103,17 @@ handleImage' baseURL tmpdir (Image ils t) = do
                     let basename = UTF8.toString $ B64.encode $ UTF8.fromString src
                     let fname = tmpdir </> basename <.> ext
                     BS.writeFile fname contents
-                    return $ Image ils (Relative (fname,tit))
+                    return $ Image ils tit (Relative fname)
                   _ -> do
                     warn $ "Could not find image `" ++ src ++ "', skipping..."
-                    return $ Image ils (Relative (src,tit))
+                    return $ Image ils tit (Relative src)
       Encoded (mime, b64) -> do
         let bs  = unByteString64 b64
-        let tit = UTF8.toString $ BS.take 10 bs
+        let basename = UTF8.toString $ BS.take 10 bs
         let ext = fromJust $ extensionFromMimeType mime
-        let fname = tmpdir </> tit <.> ext
+        let fname = tmpdir </> basename <.> ext
         BS.writeFile fname bs
-        return $ Image ils (Relative (fname, tit))
+        return $ Image ils tit (Relative fname)
 handleImage' _ _ x = return x
 
 tex2pdf' :: FilePath                        -- ^ temp directory for output

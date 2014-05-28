@@ -398,7 +398,7 @@ inlineToMediaWiki opts (Link txt (src, _)) = do
                      where src' = case src of
                                      '/':xs -> xs  -- with leading / it's a
                                      _      -> src -- link to a help page
-inlineToMediaWiki opts (Image alt (Relative (source, tit))) = do
+inlineToMediaWiki opts (Image alt tit (Relative source)) = do
   alt' <- inlineListToMediaWiki opts alt
   let txt = if (null tit)
                then if null alt
@@ -406,7 +406,7 @@ inlineToMediaWiki opts (Image alt (Relative (source, tit))) = do
                        else "|" ++ alt'
                else "|" ++ tit
   return $ "[[Image:" ++ source ++ txt ++ "]]"
-inlineToMediaWiki opts (Image alt (Encoded _)) = do
+inlineToMediaWiki opts (Image alt _ (Encoded _)) = do
   inlineToMediaWiki opts (Emph $ Str "Embedded Image: " : alt)
 
 inlineToMediaWiki opts (Note contents) = do

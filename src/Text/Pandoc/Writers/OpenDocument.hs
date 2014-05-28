@@ -386,9 +386,9 @@ inlineToOpenDocument o ils
                                 then return $ text s
                                 else return empty
     | Link  l (s,t) <- ils = mkLink s t <$> inlinesToOpenDocument o l
-    | Image alt t   <- ils = 
-      case t of 
-        Relative (src, target) -> mkImg src target
+    | Image alt target t   <- ils =
+      case t of
+        Relative src -> mkImg src target
         Encoded _ -> inlineToOpenDocument o (Strong $ Str "Embedded Image" : alt)
     | Note        l <- ils = mkNote l
     | otherwise            = return empty
@@ -507,7 +507,7 @@ paraStyle parent attrs = do
       tight     = if t then [ ("fo:margin-top"          , "0in"    )
                             , ("fo:margin-bottom"       , "0in"    )]
                        else []
-      indent    = if (i /= 0 || b) 
+      indent    = if (i /= 0 || b)
                       then [ ("fo:margin-left"         , indentVal)
                            , ("fo:margin-right"        , "0in"    )
                            , ("fo:text-indent"         , "0in"    )
@@ -537,7 +537,7 @@ paraTableStyles t s (a:xs)
                      [ ("fo:text-align", x)
                      , ("style:justify-single-word", "false")]
 
-data TextStyle = Italic | Bold | Strike | Sub | Sup | SmallC | Pre 
+data TextStyle = Italic | Bold | Strike | Sub | Sup | SmallC | Pre
                deriving ( Eq,Ord )
 
 textStyleAttr :: TextStyle -> [(String,String)]

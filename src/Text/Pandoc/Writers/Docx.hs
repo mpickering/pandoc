@@ -741,8 +741,8 @@ inlineToOpenXML opts (Link txt (src,_)) = do
                         M.insert src i extlinks }
               return i
   return [ mknode "w:hyperlink" [("r:id",id')] contents ]
-inlineToOpenXML opts (Image alt (Encoded _)) = inlineToOpenXML opts (Strong $ Str "Embedded Image:" : alt)
-inlineToOpenXML opts (Image alt (Relative (src, tit))) = do
+inlineToOpenXML opts (Image alt _ (Encoded _)) = inlineToOpenXML opts (Strong $ Str "Embedded Image:" : alt)
+inlineToOpenXML opts (Image alt tit (Relative src)) = do
   -- first, check to see if we've already done this image
   imgs <- gets stImages
   case M.lookup src imgs of
