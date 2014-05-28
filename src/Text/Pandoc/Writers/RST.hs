@@ -168,7 +168,7 @@ blockToRST (Div attr bs) = do
   return $ blankline <> startTag $+$ contents $+$ endTag $$ blankline
 blockToRST (Plain inlines) = inlineListToRST inlines
 -- title beginning with fig: indicates that the image is a figure
-blockToRST (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
+blockToRST (Para [Image txt ('f':'i':'g':':':tit) (ImagePath src)]) = do
   capt <- inlineListToRST txt
   let fig = "figure:: " <> text src
   let alt = ":alt: " <> if null tit then capt else text tit

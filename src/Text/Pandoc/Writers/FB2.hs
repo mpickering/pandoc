@@ -315,8 +315,8 @@ blockToXml :: Block -> FBM [Content]
 blockToXml (Plain ss) = cMapM toXml ss  -- FIXME: can lead to malformed FB2
 blockToXml (Para [Math DisplayMath formula]) = insertMath NormalImage formula
 -- title beginning with fig: indicates that the image is a figure
-blockToXml (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) =
-  insertImage NormalImage (Image alt (Relative (src,tit)))
+blockToXml (Para [Image alt ('f':'i':'g':':':tit) (ImagePath src)]) =
+  insertImage NormalImage (Image alt tit (ImagePath src))
 blockToXml (Para ss) = liftM (list . el "p") $ cMapM toXml ss
 blockToXml (CodeBlock _ s) = return . spaceBeforeAfter .
                              map (el "p" . el "code") . lines $ s

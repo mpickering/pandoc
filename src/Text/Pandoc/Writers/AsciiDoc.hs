@@ -123,8 +123,8 @@ blockToAsciiDoc _ Null = return empty
 blockToAsciiDoc opts (Plain inlines) = do
   contents <- inlineListToAsciiDoc opts inlines
   return $ contents <> cr
-blockToAsciiDoc opts (Para [Image alt (Relative (src,'f':'i':'g':':':tit))]) =
-  blockToAsciiDoc opts (Para [Image alt (Relative (src,tit))])
+blockToAsciiDoc opts (Para [Image alt ('f':'i':'g':':':tit) (ImagePath src)]) =
+  blockToAsciiDoc opts (Para [Image alt tit (ImagePath src)])
 blockToAsciiDoc opts (Para inlines) = do
   contents <- inlineListToAsciiDoc opts inlines
   -- escape if para starts with ordered list marker

@@ -156,7 +156,7 @@ blockToDocbook opts (Div _ bs) = blocksToDocbook opts $ map plainToPara bs
 blockToDocbook _ (Header _ _ _) = empty -- should not occur after hierarchicalize
 blockToDocbook opts (Plain lst) = inlinesToDocbook opts lst
 -- title beginning with fig: indicates that the image is a figure
-blockToDocbook opts (Para [Image txt (Relative (src,'f':'i':'g':':':_))]) =
+blockToDocbook opts (Para [Image txt ('f':'i':'g':':':tit) (ImagePath src)]) =
   let alt  = inlinesToDocbook opts txt
       capt = if null txt
                 then empty

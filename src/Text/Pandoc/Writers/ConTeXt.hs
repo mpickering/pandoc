@@ -128,7 +128,7 @@ blockToConTeXt :: Block
 blockToConTeXt Null = return empty
 blockToConTeXt (Plain lst) = inlineListToConTeXt lst
 -- title beginning with fig: indicates that the image is a figure
-blockToConTeXt (Para [Image txt (Relative (src,'f':'i':'g':':':_))]) = do
+blockToConTeXt (Para [Image txt  _ (ImagePath src)]) = do
   capt <- inlineListToConTeXt txt
   return $ blankline $$ "\\placefigure" <> braces capt <>
            braces ("\\externalfigure" <> brackets (text src)) <> blankline
