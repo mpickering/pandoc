@@ -349,19 +349,19 @@ inlineToMan opts (Link txt (src, _)) = do
              | escapeURI s == srcSuffix ->
                                  char '<' <> text srcSuffix <> char '>'
            _                  -> linktext <> text " (" <> text src <> char ')'
-inlineToMan opts (Image alternate t) = 
+inlineToMan opts (Image alternate tit t) =
   case t of
-    Relative (source, tit) -> do
-      let txt = if (null alternate) || (alternate == [Str ""]) || 
+    Relative source -> do
+      let txt = if (null alternate) || (alternate == [Str ""]) ||
                   (alternate == [Str source]) -- to prevent autolinks
                   then [Str "image"]
                     else alternate
       linkPart <- inlineToMan opts (Link txt (source, tit))
       return $ char '[' <> text "IMAGE: " <> linkPart <> char ']'
-    Encoded _ -> 
-      (\s -> char '[' <> text "EMBEDDED IMAGE: " <> s <> char ']') 
-        `fmap` inlineListToMan opts alternate 
-  
+    Encoded _ ->
+      (\s -> char '[' <> text "EMBEDDED IMAGE: " <> s <> char ']')
+        `fmap` inlineListToMan opts alternate
+
 
 inlineToMan _ (Note contents) = do
   -- add to notes in state

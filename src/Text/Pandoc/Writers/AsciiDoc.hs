@@ -142,10 +142,10 @@ blockToAsciiDoc opts (Header level (ident,_,_) inlines) = do
   let len = offset contents
   -- ident seem to be empty most of the time and asciidoc will generate them automatically
   -- so lets make them not show up when null
-  let identifier = if (null ident) then empty else ("[[" <> text ident <> "]]") 
+  let identifier = if (null ident) then empty else ("[[" <> text ident <> "]]")
   let setext = writerSetextHeaders opts
-  return $ 
-         (if setext 
+  return $
+         (if setext
             then
               identifier $$ contents $$
               (case level of
@@ -155,7 +155,7 @@ blockToAsciiDoc opts (Header level (ident,_,_) inlines) = do
                4  -> text $ replicate len '+'
                _  -> empty) <> blankline
             else
-              identifier $$ text (replicate level '=') <> space <> contents <> blankline) 
+              identifier $$ text (replicate level '=') <> space <> contents <> blankline)
 blockToAsciiDoc _ (CodeBlock (_,classes,_) str) = return $
   flush (attrs <> dashes <> space <> attrs <> cr <> text str <>
            cr <> dashes) <> blankline
@@ -373,7 +373,7 @@ inlineToAsciiDoc opts (Link txt (src, _tit)) = do
   return $ if useAuto
               then text srcSuffix
               else prefix <> text src <> "[" <> linktext <> "]"
-inlineToAsciiDoc opts (Image alternate (Relative (src, tit))) = do
+inlineToAsciiDoc opts (Image alternate tit (Relative src)) = do
 -- image:images/logo.png[Company logo, title="blah"]
   let txt = if (null alternate) || (alternate == [Str ""])
                then [Str "image"]
@@ -383,7 +383,7 @@ inlineToAsciiDoc opts (Image alternate (Relative (src, tit))) = do
                      then empty
                      else text $ ",title=\"" ++ tit ++ "\""
   return $ "image:" <> text src <> "[" <> linktext <> linktitle <> "]"
-inlineToAsciiDoc opts (Image alt (Encoded _)) = do
+inlineToAsciiDoc opts (Image alt _ (Encoded _)) = do
   inlineListToAsciiDoc opts (Str "Embedded Image: " : alt)
 inlineToAsciiDoc opts (Note [Para inlines]) =
   inlineToAsciiDoc opts (Note [Plain inlines])

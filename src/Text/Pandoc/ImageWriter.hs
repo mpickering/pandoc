@@ -19,18 +19,18 @@ import Text.Pandoc.Generic (bottomUpM)
 
 
 convertB64 :: Inline -> IO Inline
-convertB64 (Image alt (Encoded (mime, b64))) = do
+convertB64 (Image alt title (Encoded (mime, b64))) = do
   let tmpdir = "images"
   let bs  = unByteString64 b64
   let tit = UTF8.toString $ BS.take 10 bs
   let ext = fromJust $ extensionFromMimeType mime
   let fname = tmpdir </> tit <.> ext
   BS.writeFile fname bs
-  return $ Image alt (Relative (fname, tit))
+  return $ Image alt title (Relative fname)
 convertB64 x = return x
 
 convertImages :: Pandoc -> IO Pandoc
 convertImages = bottomUpM convertB64
 
 
-  
+

@@ -348,7 +348,7 @@ inlineListToRST lst =
         isComplex (Superscript _) = True
         isComplex (Subscript _) = True
         isComplex (Link _ _) = True
-        isComplex (Image _ _) = True
+        isComplex (Image _ _ _) = True
         isComplex (Code _ _) = True
         isComplex (Math _ _) = True
         isComplex _ = False
@@ -403,7 +403,7 @@ inlineToRST (Link [Str str] (src, _))
        else src == escapeURI str = do
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   return $ text srcSuffix
-inlineToRST (Link [Image alt (Relative (imgsrc,imgtit))] (src, _tit)) = do
+inlineToRST (Link [Image alt imgtit (Relative imgsrc)] (src, _tit)) = do
   label <- registerImage alt (imgsrc,imgtit) (Just src)
   return $ "|" <> label <> "|"
 inlineToRST (Link txt (src, tit)) = do
@@ -421,13 +421,13 @@ inlineToRST (Link txt (src, tit)) = do
                    modify $ \st -> st { stLinks = (txt,(src,tit)):refs }
                    return $ "`" <> linktext <> "`_"
     else return $ "`" <> linktext <> " <" <> text src <> ">`__"
-inlineToRST (Image alternate (Relative (source, tit))) = do
+inlineToRST (Image alternate tit (Relative source)) = do
   label <- registerImage alternate (source,tit) Nothing
   return $ "|" <> label <> "|"
-inlineToRST (Image alt _) = do
+inlineToRST (Image alt tit _) = do
   let alt' = Str "Embedded Image:" : alt
   txt <- inlineListToRST alt'
-  return $ "|" <> txt <> "|" 
+  return $ "|" <> txt <> "|"
 inlineToRST (Note contents) = do
   -- add to notes in state
   notes <- get >>= return . stNotes
@@ -437,7 +437,7 @@ inlineToRST (Note contents) = do
 
 registerImage :: [Inline] -> Target -> Maybe String -> State WriterState Doc
 registerImage alt (src,tit) mbtarget = do
-  pics <- stImages <$> get 
+  pics <- stImages <$> get
   txt <- case lookup alt pics of
                Just (s,t,mbt) | (s,t,mbt) == (src,tit,mbtarget) -> return alt
                _ -> do

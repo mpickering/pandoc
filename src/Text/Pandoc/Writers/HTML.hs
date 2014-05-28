@@ -741,7 +741,7 @@ inlineToHtml opts inline =
                         return $ if null tit
                                     then link
                                     else link ! A.title (toValue tit)
-    (Image txt (Relative (s,tit))) | treatAsImage s -> do
+    (Image txt tit (Relative s)) | treatAsImage s -> do
                         let alternate' = stringify txt
                         let attributes = [A.src $ toValue s] ++
                                          (if null tit
@@ -753,14 +753,14 @@ inlineToHtml opts inline =
                         let tag = if writerHtml5 opts then H5.img else H.img
                         return $ foldl (!) tag attributes
                         -- note:  null title included, as in Markdown.pl
-    (Image _ (Relative (s,tit))) -> do
+    (Image _ tit (Relative s)) -> do
                         let attributes = [A.src $ toValue s] ++
                                          (if null tit
                                             then []
                                             else [A.title $ toValue tit])
                         return $ foldl (!) H5.embed attributes
                         -- note:  null title included, as in Markdown.pl
-    (Image alt (Encoded (mime, bs))) -> undefined -- to implement
+    (Image alt tit (Encoded (mime, bs))) -> undefined -- to implement
     (Note contents)
       | writerIgnoreNotes opts -> return mempty
       | otherwise              -> do
