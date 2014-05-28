@@ -93,7 +93,7 @@ blockToMediaWiki opts (Plain inlines) =
   inlineListToMediaWiki opts inlines
 
 -- title beginning with fig: indicates that the image is a figure
-blockToMediaWiki opts (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
+blockToMediaWiki opts (Para [Image txt ('f':'i':'g':':':tit) (ImagePath src)]) = do
   case cs of
       (Image alt tit (ImagePath src)):_ ->
         return $ "[[Image:" ++ src ++ "|frame|none" ++
