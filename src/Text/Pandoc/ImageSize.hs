@@ -28,7 +28,7 @@ Portability : portable
 
 Functions for determining the size of a PNG, JPEG, or GIF image.
 -}
-module Text.Pandoc.ImageSize ( ImageType(..), imageType, imageSize,
+module Text.Pandoc.ImageSize (ImageType(..), imageType, imageSize,
                     sizeInPixels, sizeInPoints ) where
 import Data.ByteString (ByteString, unpack)
 import qualified Data.ByteString.Char8 as B

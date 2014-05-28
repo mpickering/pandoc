@@ -282,10 +282,10 @@ inlineToOrg (Link txt (src, _)) = do
         _ -> do contents <- inlineListToOrg txt
                 modify $ \s -> s{ stLinks = True }
                 return $ "[[" <> text src <> "][" <> contents <> "]]"
-inlineToOrg (Image _ _ (Relative source)) = do
+inlineToOrg (Image _ _ (ImagePath source)) = do
   modify $ \s -> s{ stImages = True }
   return $ "[[" <> text source <> "]]"
-inlineToOrg (Image alt _ (Encoded _)) = do
+inlineToOrg (Image alt _ (ImageData _ _)) = do
   inlineListToOrg (Str "Embedded Image: " : alt)
 inlineToOrg (Note contents) = do
   -- add to notes in state

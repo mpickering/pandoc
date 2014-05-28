@@ -388,8 +388,8 @@ inlineToOpenDocument o ils
     | Link  l (s,t) <- ils = mkLink s t <$> inlinesToOpenDocument o l
     | Image alt target t   <- ils =
       case t of
-        Relative src -> mkImg src target
-        Encoded _ -> inlineToOpenDocument o (Strong $ Str "Embedded Image" : alt)
+        ImagePath src -> mkImg src target
+        ImageData _ _ -> inlineToOpenDocument o (Strong $ Str "Embedded Image" : alt)
     | Note        l <- ils = mkNote l
     | otherwise            = return empty
     where

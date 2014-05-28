@@ -417,8 +417,8 @@ inlineToICML opts style (Link lst (url, title)) = do
             in  (cont, newst)
 inlineToICML opts style (Image alt _ target) =
   case target of
-    Relative t -> imageICML opts style alt t
-    Encoded _ -> inlineToICML opts style (Strong $ Str "Embedded Image":alt)
+    ImagePath t -> imageICML opts style alt t
+    ImageData _ _ -> inlineToICML opts style (Strong $ Str "Embedded Image":alt)
 inlineToICML opts style (Note lst) = footnoteToICML opts style lst
 inlineToICML opts style (Span _ lst) = inlinesToICML opts style lst
 

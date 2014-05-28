@@ -952,13 +952,13 @@ rawLaTeXInline = do
   RawInline "latex" <$> applyMacros' raw
 
 addImageCaption :: Blocks -> LP Blocks
-addImageCaption = error "to implement"--walkM go 
-  where go (Image alt tit (Relative src)) = do
+addImageCaption = walkM go
+  where go (Para [i@(Image alt tit (ImagePath src))]) = do
           mbcapt <- stateCaption <$> getState
           case mbcapt of
                Just ils -> return (Figure nullAttr [Para $ toList ils] ([Image alt tit (Relative src)]))
                Nothing  -> return (Para [Image alt tit (Relative src)])
-        go x = undefined 
+        go x = undefined
 
 addTableCaption :: Blocks -> LP Blocks
 addTableCaption = walkM go

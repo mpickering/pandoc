@@ -50,7 +50,7 @@ rtfEmbedImage :: Inline -> IO Inline
 rtfEmbedImage x@(Image _ _ t) =do
   (ext, imgdata) <-
     case t of
-      Relative src -> do
+      ImagePath src -> do
         let ext = map toLower (takeExtension src)
         if not (isURI src)
           then do
@@ -59,7 +59,7 @@ rtfEmbedImage x@(Image _ _ t) =do
                     (\e -> let _ = (e :: E.SomeException) in return B.empty)
             return (ext, dat)
           else return (ext, B.empty)
-      Encoded (mime, bs) -> do
+      ImageData mime bs -> do
         let ext = case extensionFromMimeType mime of
                     Just v -> v
                     Nothing -> error "Incorrect mime type"
@@ -345,9 +345,9 @@ inlineToRTF Space = " "
 inlineToRTF (Link text (src, _)) =
   "{\\field{\\*\\fldinst{HYPERLINK \"" ++ (codeStringToRTF src) ++
   "\"}}{\\fldrslt{\\ul\n" ++ (inlineListToRTF text) ++ "\n}}}\n"
-inlineToRTF (Image _ _ (Relative source)) =
+inlineToRTF (Image _ _ (ImagePath source)) =
   "{\\cf1 [image: " ++ source ++ "]\\cf0}"
-inlineToRTF (Image alt _ (Encoded _)) =
+inlineToRTF (Image alt _ (ImageData _ _)) =
   "{\\cf1 [Embedded image: " ++ inlineListToRTF alt  ++ "]\\cf0}"
 inlineToRTF (Note contents) =
   "{\\super\\chftn}{\\*\\footnote\\chftn\\~\\plain\\pard " ++

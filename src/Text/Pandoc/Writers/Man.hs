@@ -351,14 +351,14 @@ inlineToMan opts (Link txt (src, _)) = do
            _                  -> linktext <> text " (" <> text src <> char ')'
 inlineToMan opts (Image alternate tit t) =
   case t of
-    Relative source -> do
+    ImagePath source -> do
       let txt = if (null alternate) || (alternate == [Str ""]) ||
                   (alternate == [Str source]) -- to prevent autolinks
                   then [Str "image"]
                     else alternate
       linkPart <- inlineToMan opts (Link txt (source, tit))
       return $ char '[' <> text "IMAGE: " <> linkPart <> char ']'
-    Encoded _ ->
+    ImageData _ _ ->
       (\s -> char '[' <> text "EMBEDDED IMAGE: " <> s <> char ']')
         `fmap` inlineListToMan opts alternate
 

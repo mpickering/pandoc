@@ -325,7 +325,7 @@ inlineToDocbook opts (Link txt (src, _)) =
               then inTags False "link" [("linkend", drop 1 src)]
               else inTags False "ulink" [("url", src)]) $
           inlinesToDocbook opts txt
-inlineToDocbook _ (Image _ tit (Relative src)) =
+inlineToDocbook _ (Image _ tit (ImagePath src)) =
   let titleDoc = if null tit
                    then empty
                    else inTagsIndented "objectinfo" $

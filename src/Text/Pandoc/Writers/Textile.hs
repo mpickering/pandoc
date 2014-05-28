@@ -421,7 +421,7 @@ inlineToTextile opts (Link txt (src, _)) = do
                 _           -> inlineListToTextile opts txt
   return $ "\"" ++ label ++ "\":" ++ src
 
-inlineToTextile opts (Image alt tit (Relative source)) = do
+inlineToTextile opts (Image alt tit (ImagePath source)) = do
   alt' <- inlineListToTextile opts alt
   let txt = if null tit
                then if null alt'
@@ -429,7 +429,7 @@ inlineToTextile opts (Image alt tit (Relative source)) = do
                        else "(" ++ alt' ++ ")"
                else "(" ++ tit ++ ")"
   return $ "!" ++ source ++ txt ++ "!"
-inlineToTextile opts (Image alt _ (Encoded _)) = do
+inlineToTextile opts (Image alt _ (ImageData _ _)) = do
   inlineListToTextile opts (Str "Embedded Image: " : alt)
 
 inlineToTextile opts (Note contents) = do

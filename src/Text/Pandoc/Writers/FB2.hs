@@ -483,12 +483,12 @@ insertMath immode formula = do
     WebTeX url -> do
        let alt = [Code nullAttr formula]
        let imgurl = url ++ urlEncode formula
-       let img = Image alt "" (Relative imgurl)
+       let img = Image alt "" (ImagePath imgurl)
        insertImage immode img
     _ -> return [el "code" formula]
 
 insertImage :: ImageMode -> Inline -> FBM [Content]
-insertImage immode (Image alt ttl (Relative url)) = do
+insertImage immode (Image alt ttl (ImagePath url)) = do
   images <- imagesToFetch `liftM` get
   let n = 1 + length images
   let fname = "image" ++ show n
