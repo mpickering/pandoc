@@ -410,7 +410,7 @@ blockToHtml _ Null = return mempty
 blockToHtml opts (Plain lst) = inlineListToHtml opts lst
 -- title beginning with fig: indicates that the image is a figure
 blockToHtml opts (Para [Image txt ('f':'i':'g':':':tit) (ImagePath s)]) = do
-  img <- inlineToHtml opts (Image txt (Relative (s,tit)))
+  img <- inlineToHtml opts (Image txt tit (ImagePath s))
   let tocapt = if writerHtml5 opts
                   then H5.figcaption
                   else H.p ! A.class_ "caption"
