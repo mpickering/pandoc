@@ -114,7 +114,7 @@ blockToTextile opts (Plain inlines) =
 -- title beginning with fig: indicates that the image is a figure
 blockToTextile opts (Para [Image txt ('f':'i':'g':':':tit) (ImagePath src)]) = do
   capt <- blockToTextile opts (Para txt)
-  im <- inlineToTextile opts (Image txt (Relative (src,tit)))
+  im <- inlineToTextile opts (Image txt src (ImagePath src))
   return $ im ++ "\n" ++ capt
 
 blockToTextile opts (Para inlines) = do

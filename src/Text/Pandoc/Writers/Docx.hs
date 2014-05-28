@@ -531,7 +531,7 @@ blockToOpenXML opts (Plain lst) = withParaProp (pStyle "Compact")
 -- title beginning with fig: indicates that the image is a figure
 blockToOpenXML opts (Para [Image alt ('f':'i':'g':':':tit) (ImagePath src)]) = do
   paraProps <- getParaProps False
-  contents <- inlinesToOpenXML opts [Image alt (Relative (src,tit))]
+  contents <- inlinesToOpenXML opts [Image alt tit (ImagePath src)]
   captionNode <- withParaProp (pStyle "ImageCaption")
                  $ blockToOpenXML opts (Para alt)
   return $ mknode "w:p" [] (paraProps ++ contents) : captionNode
