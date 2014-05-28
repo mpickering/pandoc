@@ -117,13 +117,13 @@ blockToOrg (Div attrs bs) = do
            nest 2 endTag $$ "#+END_HTML" $$ blankline
 blockToOrg (Plain inlines) = inlineListToOrg inlines
 -- title beginning with fig: indicates that the image is a figure
-blockToOrg (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
-  capt <- if null txt
-             then return empty
-             else (\c -> "#+CAPTION: " <> c <> blankline) `fmap`
-                    inlineListToOrg txt
-  img <- inlineToOrg (Image txt (src,tit))
-  return $ capt <> img
+--blockToOrg (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
+--  capt <- if null txt
+--             then return empty
+--             else (\c -> "#+CAPTION: " <> c <> blankline) `fmap`
+--                    inlineListToOrg txt
+--  img <- inlineToOrg (Image txt (Relative (src,tit)))
+--  return $ capt <> img
 blockToOrg (Para inlines) = do
   contents <- inlineListToOrg inlines
   return $ contents <> blankline

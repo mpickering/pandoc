@@ -156,17 +156,18 @@ blockToDocbook opts (Div _ bs) = blocksToDocbook opts $ map plainToPara bs
 blockToDocbook _ (Header _ _ _) = empty -- should not occur after hierarchicalize
 blockToDocbook opts (Plain lst) = inlinesToDocbook opts lst
 -- title beginning with fig: indicates that the image is a figure
-blockToDocbook opts (Para [Image txt (src,'f':'i':'g':':':_)]) =
-  let alt  = inlinesToDocbook opts txt
-      capt = if null txt
-                then empty
-                else inTagsSimple "title" alt
-  in  inTagsIndented "figure" $
-        capt $$
-        (inTagsIndented "mediaobject" $
-           (inTagsIndented "imageobject"
-             (selfClosingTag "imagedata" [("fileref",src)])) $$
-           inTagsSimple "textobject" (inTagsSimple "phrase" alt))
+--blockToDocbook opts (Para [Image txt (Relative (src,'f':'i':'g':':':_))]) =
+--  let alt  = inlinesToDocbook opts txt
+--      capt = if null txt
+--                then empty
+--                else inTagsSimple "title" alt
+--  in  inTagsIndented "figure" $
+--        capt $$
+--        (inTagsIndented "mediaobject" $
+--           (inTagsIndented "imageobject"
+--             (selfClosingTag "imagedata" [("fileref",src)])) $$
+--           inTagsSimple "textobject" (inTagsSimple "phrase" alt))
+>>>>>>> 3944f31... Figure changes
 blockToDocbook opts (Para lst)
   | hasLineBreaks lst = flush $ nowrap $ inTagsSimple "literallayout" $ inlinesToDocbook opts lst
   | otherwise         = inTagsIndented "para" $ inlinesToDocbook opts lst

@@ -310,13 +310,13 @@ blockToLaTeX (Div (_,classes,_) bs) = do
 blockToLaTeX (Plain lst) =
   inlineListToLaTeX $ dropWhile isLineBreakOrSpace lst
 -- title beginning with fig: indicates that the image is a figure
-blockToLaTeX (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
-  capt <- if null txt
-             then return empty
-             else (\c -> "\\caption" <> braces c) `fmap` inlineListToLaTeX txt
-  img <- inlineToLaTeX (Image txt (src,tit))
-  return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ img $$
-           capt $$ "\\end{figure}"
+--blockToLaTeX (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
+--  capt <- if null txt
+--             then return empty
+--             else (\c -> "\\caption" <> braces c) `fmap` inlineListToLaTeX txt
+--  img <- inlineToLaTeX (Image txt (Relative (src,tit)))
+--  return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ img $$
+--           capt $$ "\\end{figure}"
 -- . . . indicates pause in beamer slides
 blockToLaTeX (Para [Str ".",Space,Str ".",Space,Str "."]) = do
   beamer <- writerBeamer `fmap` gets stOptions

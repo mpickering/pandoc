@@ -187,6 +187,9 @@ blockToCustom lua (DefinitionList items) =
 blockToCustom lua (Div attr items) =
   callfunc lua "Div" items (attrToMap attr)
 
+blockToCustom lua (Figure as bs cs) =
+  callfunc lua "Figure" cs bs (attrToMap as)
+
 -- | Convert list of Pandoc block elements to Custom.
 blockListToCustom :: LuaState -- ^ Options
                   -> [Block]       -- ^ List of block elements
