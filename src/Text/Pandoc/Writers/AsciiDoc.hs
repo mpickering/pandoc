@@ -373,7 +373,7 @@ inlineToAsciiDoc opts (Link txt (src, _tit)) = do
   return $ if useAuto
               then text srcSuffix
               else prefix <> text src <> "[" <> linktext <> "]"
-inlineToAsciiDoc opts (Image alternate tit (Relative src)) = do
+inlineToAsciiDoc opts (Image alternate tit (ImagePath src)) = do
 -- image:images/logo.png[Company logo, title="blah"]
   let txt = if (null alternate) || (alternate == [Str ""])
                then [Str "image"]
@@ -383,7 +383,7 @@ inlineToAsciiDoc opts (Image alternate tit (Relative src)) = do
                      then empty
                      else text $ ",title=\"" ++ tit ++ "\""
   return $ "image:" <> text src <> "[" <> linktext <> linktitle <> "]"
-inlineToAsciiDoc opts (Image alt _ (Encoded _)) = do
+inlineToAsciiDoc opts (Image alt _ (ImageData _ _)) = do
   inlineListToAsciiDoc opts (Str "Embedded Image: " : alt)
 inlineToAsciiDoc opts (Note [Para inlines]) =
   inlineToAsciiDoc opts (Note [Plain inlines])

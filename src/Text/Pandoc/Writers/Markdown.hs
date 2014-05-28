@@ -792,14 +792,14 @@ inlineToMarkdown opts (Link txt (src, tit)) = do
                            text src <> linktitle <> ")"
 inlineToMarkdown opts (Image alternate tit l) =
   case l of
-    Relative source -> do
+    ImagePath source -> do
       let txt = if null alternate || alternate == [Str source]
                              -- to prevent autolinks
              then [Str ""]
               else alternate
       linkPart <- inlineToMarkdown opts (Link txt (source, tit))
       return $ "!" <> linkPart
-    Encoded _ -> inlineToMarkdown opts (Strong $ Str "Embedded Image:" : alternate)
+    ImageData _ _ -> inlineToMarkdown opts (Strong $ Str "Embedded Image:" : alternate)
 inlineToMarkdown opts (Note contents) = do
   modify (\st -> st{ stNotes = contents : stNotes st })
   st <- get

@@ -94,13 +94,11 @@ blockToMediaWiki opts (Plain inlines) =
 
 -- title beginning with fig: indicates that the image is a figure
 blockToMediaWiki opts (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
-  capt <- if null txt
-             then return ""
-             else ("|caption " ++) `fmap` inlineListToMediaWiki opts txt
-  let opt = if null txt
-               then ""
-               else "|alt=" ++ if null tit then capt else tit ++ capt
-  return $ "[[Image:" ++ src ++ "|frame|none" ++ opt ++ "]]\n"
+  case cs of
+      (Image alt tit (ImagePath src)):_ ->
+        return $ "[[Image:" ++ src ++ "|frame|none" ++
+        "|alt=" ++ tit ++ capt ++ "]]\n"
+      _ -> return ""
 
 blockToMediaWiki opts (Para inlines) = do
   useTags <- get >>= return . stUseTags
@@ -398,7 +396,7 @@ inlineToMediaWiki opts (Link txt (src, _)) = do
                      where src' = case src of
                                      '/':xs -> xs  -- with leading / it's a
                                      _      -> src -- link to a help page
-inlineToMediaWiki opts (Image alt tit (Relative source)) = do
+inlineToMediaWiki opts (Image alt tit (ImagePath source)) = do
   alt' <- inlineListToMediaWiki opts alt
   let txt = if (null tit)
                then if null alt
@@ -406,7 +404,7 @@ inlineToMediaWiki opts (Image alt tit (Relative source)) = do
                        else "|" ++ alt'
                else "|" ++ tit
   return $ "[[Image:" ++ source ++ txt ++ "]]"
-inlineToMediaWiki opts (Image alt _ (Encoded _)) = do
+inlineToMediaWiki opts (Image alt _ (ImageData _ _)) = do
   inlineToMediaWiki opts (Emph $ Str "Embedded Image: " : alt)
 
 inlineToMediaWiki opts (Note contents) = do

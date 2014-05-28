@@ -885,7 +885,7 @@ para = try $ do
             return $ do
               result' <- result
               case B.toList result' of
-                   [Image alt tit (Relative src)]
+                   [Image alt tit (ImagePath src)]
                      | Ext_implicit_figures `Set.member` exts ->
                         -- the fig: at beginning of title indicates a figure
                         return $ B.para $ B.image src ("fig:" ++ tit) (B.fromList alt)

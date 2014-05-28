@@ -174,7 +174,7 @@ blockToRST (Para [Image txt (Relative (src,'f':'i':'g':':':tit))]) = do
   let alt = ":alt: " <> if null tit then capt else text tit
   return $ hang 3 ".. " $ fig $$ alt $+$ capt $$ blankline
 blockToRST (Para inlines)
-  | LineBreak `elem` inlines = do -- use line block if LineBreaks 
+  | LineBreak `elem` inlines = do -- use line block if LineBreaks
       lns <- mapM inlineListToRST $ splitBy (==LineBreak) inlines
       return $ (vcat $ map (text "| " <>) lns) <> blankline
   | otherwise = do
@@ -403,7 +403,7 @@ inlineToRST (Link [Str str] (src, _))
        else src == escapeURI str = do
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   return $ text srcSuffix
-inlineToRST (Link [Image alt imgtit (Relative imgsrc)] (src, _tit)) = do
+inlineToRST (Link [Image alt imgtit (ImagePath imgsrc)] (src, _tit)) = do
   label <- registerImage alt (imgsrc,imgtit) (Just src)
   return $ "|" <> label <> "|"
 inlineToRST (Link txt (src, tit)) = do
@@ -421,7 +421,7 @@ inlineToRST (Link txt (src, tit)) = do
                    modify $ \st -> st { stLinks = (txt,(src,tit)):refs }
                    return $ "`" <> linktext <> "`_"
     else return $ "`" <> linktext <> " <" <> text src <> ">`__"
-inlineToRST (Image alternate tit (Relative source)) = do
+inlineToRST (Image alternate tit (ImagePath source)) = do
   label <- registerImage alternate (source,tit) Nothing
   return $ "|" <> label <> "|"
 inlineToRST (Image alt tit _) = do

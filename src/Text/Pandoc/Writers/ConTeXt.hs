@@ -311,12 +311,12 @@ inlineToConTeXt (Link txt          (src, _))      = do
                   else brackets empty <> brackets label)
            <> "\\from"
            <> brackets (text ref)
-inlineToConTeXt (Image _ _ (Relative src)) = do
+inlineToConTeXt (Image _ _ (ImagePath src)) = do
   let src' = if isURI src
                 then src
                 else unEscapeString src
   return $ braces $ "\\externalfigure" <> brackets (text src')
-inlineToConTeXt (Image alt _ (Encoded _)) = do
+inlineToConTeXt (Image alt _ (ImageData _ _)) = do
   inlineToConTeXt (Strong (Str "Embedded Image:" : alt))
 inlineToConTeXt (Note contents) = do
   contents' <- blockListToConTeXt contents

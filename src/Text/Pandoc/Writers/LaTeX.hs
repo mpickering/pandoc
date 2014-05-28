@@ -761,14 +761,14 @@ inlineToLaTeX (Link txt (src, _)) =
                 src' <- stringToLaTeX URLString src
                 return $ text ("\\href{" ++ src' ++ "}{") <>
                          contents <> char '}'
-inlineToLaTeX (Image _ _ (Relative source)) = do
+inlineToLaTeX (Image _ _ (ImagePath source)) = do
   modify $ \s -> s{ stGraphics = True }
   let source' = if isURI source
                    then source
                    else unEscapeString source
   source'' <- stringToLaTeX URLString source'
   return $ "\\includegraphics" <> braces (text source'')
-inlineToLaTeX (Image alt _ (Encoded _)) = do
+inlineToLaTeX (Image alt _ (ImageData _ _)) = do
   let alt' = Str "Embedded Image" : alt
   capt <- (\c -> "\\caption" <> braces c) <$> inlineListToLaTeX alt'
   return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ 

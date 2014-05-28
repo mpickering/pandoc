@@ -437,7 +437,7 @@ inlineToTexinfo (Link txt (src, _)) = do
                 return $ text ("@uref{" ++ src1 ++ ",") <> contents <>
                          char '}'
 
-inlineToTexinfo (Image alternate _ (Relative source)) = do
+inlineToTexinfo (Image alternate _ (ImagePath source)) = do
   content <- escapeCommas $ inlineListToTexinfo alternate
   return $ text ("@image{" ++ base ++ ",,,") <> content <> text "," <>
            text (ext ++ "}")
@@ -447,7 +447,7 @@ inlineToTexinfo (Image alternate _ (Relative source)) = do
     source' = if isURI source
                  then source
                  else unEscapeString source
-inlineToTexinfo (Image alternate _ (Encoded _)) = do
+inlineToTexinfo (Image alternate _ (ImageData _ _)) = do
   inlineToTexinfo (Strong (Str "Embedded Image" : alternate))
 
 inlineToTexinfo (Note contents) = do

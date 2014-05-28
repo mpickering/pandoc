@@ -413,10 +413,10 @@ pLink = try $ do
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
   return $ B.link (escapeURI url) title lab
 
-srcParser :: Parser String () ImageType
-srcParser = try encoded <|> Relative <$> (many1 anyChar)
+srcParser :: Parser String () ImageContents
+srcParser = try encoded <|> ImagePath <$> (many1 anyChar)
 
-encoded :: Parser String () ImageType
+encoded :: Parser String () ImageContents
 encoded = do
   string "data:"
   mime <- option "text/plain" (try $ many1Till anyChar (char ';'))
@@ -425,7 +425,7 @@ encoded = do
   optional $ string "base64"
   char ','
   bs <- ByteString64 . BS.pack <$> many1 anyChar
-  return $ Encoded (mime, bs)
+  return $ ImageData mime bs
   where
     attribute = try (many1 alphaNum *> char '=' *> many1 alphaNum)
 
