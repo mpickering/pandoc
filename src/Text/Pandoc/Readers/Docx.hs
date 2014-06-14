@@ -77,11 +77,13 @@ import Text.Pandoc.Definition
 import Text.Pandoc.Options
 import Text.Pandoc.Builder (text, toList)
 import Text.Pandoc.Generic (bottomUp)
+import Text.Pandoc
 import Text.Pandoc.MIME (getMimeType)
 import Text.Pandoc.UTF8 (toString)
 import Text.Pandoc.Readers.Docx.Parse
 import Text.Pandoc.Readers.Docx.Lists
 import Data.Maybe (mapMaybe, isJust, fromJust)
+import Data.Char (isSpace)
 import Data.List (delete, isPrefixOf, (\\), intersect)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as B
@@ -120,7 +122,14 @@ parStyleToDivAttr pPr = ("",
                          )
 
 strToInlines :: String -> [Inline]
-strToInlines = toList . text
+strToInlines "" = []
+strToInlines s  =
+  let (v, w) = span (not . isSpace) s
+      (_, y) = span isSpace w
+  in
+   case null w of
+     True  -> [Str v]
+     False -> (Str v) : Space : (strToInlines y)
 
 codeSpans :: [String]
 codeSpans = ["VerbatimChar"]
@@ -148,7 +157,7 @@ strNormalize (Str "" : ils) = strNormalize ils
 strNormalize ((Str s) : (Str s') : l) = strNormalize ((Str (s++s')) : l)
 strNormalize (il:ils) = il : (strNormalize ils)
 
-runToInlines :: ReaderOptions -> Docx -> Run -> [Inline]
+runToInlines :: ReaderOptions -> DocX -> Run -> [Inline]
 runToInlines _ _ (Run rs runElems)
   | isJust (rStyle rs) && (fromJust (rStyle rs)) `elem` codeSpans =
     case runStyleToSpanAttr rs == ("", [], []) of
@@ -208,7 +217,6 @@ makeHeaderAnchors h@(Header n (_, classes, kvs) ils) =
         False -> Header n (ident, classes, kvs) (ils \\ (x:xs))
     _ -> h
 makeHeaderAnchors blk = blk
-
 
 parPartsToInlines :: ReaderOptions -> Docx -> [ParPart] -> [Inline]
 parPartsToInlines opts docx parparts =
