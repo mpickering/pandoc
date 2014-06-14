@@ -27,6 +27,7 @@ module Text.Pandoc.Writers.FB2 (writeFB2)  where
 
 import Control.Monad.State (StateT, evalStateT, get, modify)
 import Control.Monad.State (liftM, liftM2, liftIO)
+import Control.Applicative ((<$>))
 import Data.ByteString.Base64 (encode)
 import Data.Char (toUpper, toLower, isSpace, isAscii, isControl)
 import Data.List (intersperse, intercalate, isPrefixOf)
@@ -81,7 +82,7 @@ writeFB2 opts (Pandoc meta blocks) = flip evalStateT newFB $ do
      secs <- renderSections 1 blocks
      let body = el "body" $ fp ++ secs
      notes <- renderFootnotes
-     (imgs,missing) <- liftM imagesToFetch get >>= \s -> liftIO (fetchImages s)
+     (imgs,missing) <- liftM imagesToFetch get >>= liftIO . fetchImages
      let body' = replaceImagesWithAlt missing body
      let fb2_xml = el "FictionBook" (fb2_attrs, [desc, body'] ++ notes ++ imgs)
      return $ xml_head ++ (showContent fb2_xml)
@@ -447,7 +448,7 @@ toXml Space = return [txt " "]
 toXml LineBreak = return [el "empty-line" ()]
 toXml (Math _ formula) = insertMath InlineImage formula
 toXml (RawInline _ _) = return []  -- raw TeX and raw HTML are suppressed
-toXml (Link text (url,ttl)) = do
+toXml (Link text (url,ttl)) = d
   fns <- footnotes `liftM` get
   let n = 1 + length fns
   let ln_id = linkID n
@@ -488,20 +489,28 @@ insertMath immode formula = do
     _ -> return [el "code" formula]
 
 insertImage :: ImageMode -> Inline -> FBM [Content]
-insertImage immode (Image alt ttl (ImagePath url)) = do
-  images <- imagesToFetch `liftM` get
-  let n = 1 + length images
-  let fname = "image" ++ show n
-  modify (\s -> s { imagesToFetch = (fname, url) : images })
-  let ttlattr = case (immode, null ttl) of
-                  (NormalImage, False) -> [ uattr "title" ttl ]
-                  _ -> []
-  return . list $
-         el "image" $
-            [ attr ("l","href") ('#':fname)
-            , attr ("l","type") (show immode)
-            , uattr "alt" (cMap plain alt) ]
-            ++ ttlattr
+insertImage immode (Image alt ttl cont) = do
+  case cont of
+    (ImagePath url) -> do
+      images <- imagesToFetch <$> get
+      let n = 1 + length images
+      let fname = "image" ++ show n
+      modify (\s -> s { imagesToFetch = (fname, url) : images })
+      let ttlattr = case (immode, null ttl) of
+                      (NormalImage, False) -> [ uattr "title" ttl ]
+                      _ -> []
+      return . list $
+             el "image" $
+                [ attr ("l","href") ('#':fname)
+                , attr ("l","type") (show immode)
+                , uattr "alt" (cMap plain alt) ]
+                ++ ttlattr
+    (ImageData mime bs) -> do
+      return . list $
+        el "binary" $
+            ([uattr "id" "needid" 
+            , uattr "content-type" mime]
+            , txt $ toStr $ unByteString64 bs )
 insertImage _ _ = error "unexpected inline instead of image"
 
 replaceImagesWithAlt :: [String] -> Content -> Content
