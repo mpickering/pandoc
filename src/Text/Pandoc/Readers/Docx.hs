@@ -83,7 +83,6 @@ import Text.Pandoc.UTF8 (toString)
 import Text.Pandoc.Readers.Docx.Parse
 import Text.Pandoc.Readers.Docx.Lists
 import Data.Maybe (mapMaybe, isJust, fromJust)
-import Data.Char (isSpace)
 import Data.List (delete, isPrefixOf, (\\), intersect)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as B
@@ -122,14 +121,7 @@ parStyleToDivAttr pPr = ("",
                          )
 
 strToInlines :: String -> [Inline]
-strToInlines "" = []
-strToInlines s  =
-  let (v, w) = span (not . isSpace) s
-      (_, y) = span isSpace w
-  in
-   case null w of
-     True  -> [Str v]
-     False -> (Str v) : Space : (strToInlines y)
+strToInlines = toList . text
 
 codeSpans :: [String]
 codeSpans = ["VerbatimChar"]
