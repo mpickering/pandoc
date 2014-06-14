@@ -953,12 +953,12 @@ rawLaTeXInline = do
 
 addImageCaption :: Blocks -> LP Blocks
 addImageCaption = walkM go
-  where go (Para [i@(Image alt tit (ImagePath src))]) = do
+  where go (Image alt tit (ImagePath src)) = do
           mbcapt <- stateCaption <$> getState
           case mbcapt of
-               Just ils -> return (Figure nullAttr [Para $ toList ils] ([Image alt tit (ImagePath src)]))
-               Nothing  -> return (Para [Image alt tit (ImagePath src)])
-        go x = undefined
+               Just ils -> return (Image (toList ils) "fig:" (ImagePath src))
+               Nothing  -> return (Image alt tit (ImagePath src))
+        go x = return x
 
 addTableCaption :: Blocks -> LP Blocks
 addTableCaption = walkM go
