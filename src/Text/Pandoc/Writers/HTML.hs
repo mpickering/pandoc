@@ -64,6 +64,7 @@ import System.FilePath (takeExtension)
 import Data.Monoid
 import Data.Aeson (Value)
 import Data.ByteString (unpack)
+import qualified Data.ByteString as B
 
 data WriterState = WriterState
     { stNotes            :: [Html]  -- ^ List of notes
@@ -85,6 +86,10 @@ strToHtml xs@(_:_)  = case break (=='\'') xs of
                            (_ ,[]) -> toHtml xs
                            (ys,zs) -> toHtml ys `mappend` strToHtml zs
 strToHtml [] = ""
+
+toStr :: B.ByteString -> String
+toStr = map (toEnum . fromEnum) . B.unpack
+
 
 -- | Hard linebreak.
 nl :: WriterOptions -> Html
@@ -741,26 +746,21 @@ inlineToHtml opts inline =
                         return $ if null tit
                                     then link
                                     else link ! A.title (toValue tit)
-    (Image txt tit (ImagePath s)) | treatAsImage s -> do
+    (Image txt tit cont) -> do
                         let alternate' = stringify txt
-                        let attributes = [A.src $ toValue s] ++
-                                         (if null tit
+                        let attributes = (if null tit
                                             then []
                                             else [A.title $ toValue tit]) ++
-                                         if null txt
+                                          (if null txt
                                             then []
-                                            else [A.alt $ toValue alternate']
-                        let tag = if writerHtml5 opts then H5.img else H.img
-                        return $ foldl (!) tag attributes
-                        -- note:  null title included, as in Markdown.pl
-    (Image _ tit (ImagePath s)) -> do
-                        let attributes = [A.src $ toValue s] ++
-                                         (if null tit
-                                            then []
-                                            else [A.title $ toValue tit])
-                        return $ foldl (!) H5.embed attributes
-                        -- note:  null title included, as in Markdown.pl
-    (Image alt tit (ImageData mime bs)) -> undefined -- to implement
+                                            else [A.alt $ toValue alternate'])
+                        let imgtag =  if writerHtml5 opts then H5.img else H.img
+                        let (src, tag) = case cont of
+                                          ImagePath s -> (s, if treatAsImage s then imgtag else H5.embed)
+                                          -- note:  null title included, as in Markdown.pl
+                                          ImageData mime bs ->
+                                            ("data:" ++ mime ++ ";base64," ++ (toStr . unByteString64) bs, imgtag)
+                        return $ foldl (!) tag ([A.src $ toValue src] ++ attributes)
     (Note contents)
       | writerIgnoreNotes opts -> return mempty
       | otherwise              -> do
