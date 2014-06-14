@@ -52,7 +52,7 @@ import Text.Pandoc.Walk
 -- (foot)notes, URLs, references, images.
 data FbRenderState = FbRenderState
     { footnotes :: [ (Int, String, [Content]) ]  -- ^ #, ID, text
-    , imagesToFetch :: [ (String, String) ]  -- ^ filename, URL or path
+    , images :: [ (String, ImageContents) ]  -- ^ filename, image contents
     , parentListMarker :: String  -- ^ list marker of the parent ordered list
     , parentBulletLevel :: Int  -- ^ nesting level of the unordered list
     , writerOptions :: WriterOptions
@@ -62,7 +62,7 @@ data FbRenderState = FbRenderState
 type FBM = StateT FbRenderState IO
 
 newFB :: FbRenderState
-newFB = FbRenderState { footnotes = [], imagesToFetch = []
+newFB = FbRenderState { footnotes = [], images = []
                       , parentListMarker = "", parentBulletLevel = 0
                       , writerOptions = def }
 
@@ -82,7 +82,7 @@ writeFB2 opts (Pandoc meta blocks) = flip evalStateT newFB $ do
      secs <- renderSections 1 blocks
      let body = el "body" $ fp ++ secs
      notes <- renderFootnotes
-     (imgs,missing) <- liftM imagesToFetch get >>= liftIO . fetchImages
+     (imgs,missing) <- images <$> get >>= liftIO . appendImages
      let body' = replaceImagesWithAlt missing body
      let fb2_xml = el "FictionBook" (fb2_attrs, [desc, body'] ++ notes ++ imgs)
      return $ xml_head ++ (showContent fb2_xml)
@@ -209,15 +209,15 @@ renderFootnotes = do
 
 -- | Fetch images and encode them for the FictionBook XML.
 -- Return image data and a list of hrefs of the missing images.
-fetchImages :: [(String,String)] -> IO ([Content],[String])
-fetchImages links = do
+appendImages :: [(String, ImageContents)] -> IO ([Content],[String])
+appendImages links = do
     imgs <- mapM (uncurry fetchImage) links
     return $ (rights imgs, lefts imgs)
 
 -- | Fetch image data from disk or from network and make a <binary> XML section.
 -- Return either (Left hrefOfMissingImage) or (Right xmlContent).
-fetchImage :: String -> String -> IO (Either String Content)
-fetchImage href link = do
+fetchImage :: String -> ImageContents -> IO (Either String Content)
+fetchImage href (ImagePath link)  = do
   mbimg <-
       case (isURI link, readDataURI link) of
        (True, Just (mime,_,True,base64)) ->
@@ -237,17 +237,22 @@ fetchImage href link = do
                   _ -> Nothing  -- only PNG and JPEG are supported in FB2
         return $ liftM2 (,) t (liftM (toStr . encode) d)
   case mbimg of
-    Just (imgtype, imgdata) -> do
-        return . Right $ el "binary"
-                   ( [uattr "id" href
-                     , uattr "content-type" imgtype]
-                   , txt imgdata )
+    Just (imgtype, imgdata) ->
+        return $ makeBinary href imgtype imgdata
     _ -> return (Left ('#':href))
   where
    nothingOnError :: (IO B.ByteString) -> (IO (Maybe B.ByteString))
    nothingOnError action = liftM Just action `E.catch` omnihandler
    omnihandler :: E.SomeException -> IO (Maybe B.ByteString)
    omnihandler _ = return Nothing
+fetchImage href (ImageData imgtype imgdata) = 
+  return $ makeBinary href imgtype (toStr $ encode $ unByteString64 imgdata)
+
+makeBinary :: String -> String -> String -> Either String Content
+makeBinary href mime imgdata =
+  Right $ el "binary" ( [ uattr "id" href
+                      , uattr "content-type" mime]
+                      , txt imgdata)
 
 -- | Extract mime type and encoded data from the Data URI.
 readDataURI :: String -- ^ URI
@@ -448,7 +453,7 @@ toXml Space = return [txt " "]
 toXml LineBreak = return [el "empty-line" ()]
 toXml (Math _ formula) = insertMath InlineImage formula
 toXml (RawInline _ _) = return []  -- raw TeX and raw HTML are suppressed
-toXml (Link text (url,ttl)) = d
+toXml (Link text (url,ttl)) = do
   fns <- footnotes `liftM` get
   let n = 1 + length fns
   let ln_id = linkID n
@@ -490,27 +495,19 @@ insertMath immode formula = do
 
 insertImage :: ImageMode -> Inline -> FBM [Content]
 insertImage immode (Image alt ttl cont) = do
-  case cont of
-    (ImagePath url) -> do
-      images <- imagesToFetch <$> get
-      let n = 1 + length images
-      let fname = "image" ++ show n
-      modify (\s -> s { imagesToFetch = (fname, url) : images })
-      let ttlattr = case (immode, null ttl) of
-                      (NormalImage, False) -> [ uattr "title" ttl ]
-                      _ -> []
-      return . list $
-             el "image" $
-                [ attr ("l","href") ('#':fname)
-                , attr ("l","type") (show immode)
-                , uattr "alt" (cMap plain alt) ]
-                ++ ttlattr
-    (ImageData mime bs) -> do
-      return . list $
-        el "binary" $
-            ([uattr "id" "needid" 
-            , uattr "content-type" mime]
-            , txt $ toStr $ unByteString64 bs )
+  is <- images <$> get
+  let n = 1 + length is
+  let fname = "image" ++ show n
+  modify (\s -> s { images = (fname, cont) : is })
+  let ttlattr = case (immode, null ttl) of
+                  (NormalImage, False) -> [ uattr "title" ttl ]
+                  _ -> []
+  return . list $
+         el "image" $
+            [ attr ("l","href") ('#':fname)
+            , attr ("l","type") (show immode)
+            , uattr "alt" (cMap plain alt) ]
+            ++ ttlattr
 insertImage _ _ = error "unexpected inline instead of image"
 
 replaceImagesWithAlt :: [String] -> Content -> Content
