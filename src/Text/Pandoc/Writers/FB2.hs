@@ -245,7 +245,7 @@ fetchImage href (ImagePath link)  = do
    nothingOnError action = liftM Just action `E.catch` omnihandler
    omnihandler :: E.SomeException -> IO (Maybe B.ByteString)
    omnihandler _ = return Nothing
-fetchImage href (ImageData imgtype imgdata) = 
+fetchImage href (ImageData imgtype imgdata) =
   return $ makeBinary href imgtype (toStr $ encode $ unByteString64 imgdata)
 
 makeBinary :: String -> String -> String -> Either String Content
@@ -453,7 +453,7 @@ toXml Space = return [txt " "]
 toXml LineBreak = return [el "empty-line" ()]
 toXml (Math _ formula) = insertMath InlineImage formula
 toXml (RawInline _ _) = return []  -- raw TeX and raw HTML are suppressed
-toXml (Link text (url,ttl)) = do
+toXml (Link text (url,ttl)) = d
   fns <- footnotes `liftM` get
   let n = 1 + length fns
   let ln_id = linkID n

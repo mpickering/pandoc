@@ -37,7 +37,3 @@ convertB64 x = return x
 
 convertImages :: Pandoc -> IO Pandoc
 convertImages = bottomUpM convertB64
-
-
-
-
