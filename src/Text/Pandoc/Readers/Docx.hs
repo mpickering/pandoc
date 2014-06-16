@@ -78,6 +78,7 @@ import Text.Pandoc.Options
 import Text.Pandoc.Builder (toList, Inlines, Blocks)
 import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.Generic (bottomUp)
+import Text.Pandoc.Shared (extractSpaces)
 import Text.Pandoc.MIME (getMimeType)
 import Text.Pandoc.UTF8 (toString)
 import Text.Pandoc.Readers.Docx.Parse
@@ -152,7 +153,9 @@ runToInlines o d (Run rs runElems) =
   let style = lookup "rStyle" rs in
   case isJust $ (flip elem codeSpans) <$> style of
     True -> B.spanWith ("", maybeToList style , []) (B.text $ runsToString runElems)
-    False -> foldr runStyleToConstructor (runsToInlines o d runElems) rs
+    False ->
+      let f = (\s -> foldr runStyleToConstructor s rs) in
+      extractSpaces f (runsToInlines o d runElems)
 runToInlines opts docx@(DocX _ notes _ _ _ ) (Footnote fnId) =
   case (getFootNote fnId notes) of
     Just bodyParts ->
