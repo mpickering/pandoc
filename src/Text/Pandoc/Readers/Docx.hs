@@ -138,9 +138,8 @@ codeDivs = ["SourceCode"]
 runToString :: Run -> String
 runToString (Run _ es) = runsToString es
 runToString (TextRun s) = s
-runToString (LnBrk) = ['\n']
+runToString (LnBrk) = "\n"
 runToString _ = ""
-
 
 runsToString :: [Run] -> String
 runsToString = concatMap runToString
@@ -152,7 +151,7 @@ runToInlines :: ReaderOptions -> DocX -> Run -> Inlines
 runToInlines o d (Run rs runElems) =
   let style = lookup "rStyle" rs in
   case isJust $ (flip elem codeSpans) <$> style of
-    True -> B.spanWith ("", maybeToList style , []) (B.text $ runsToString runElems)
+    True -> B.code (runsToString runElems)
     False ->
       let f = (\s -> foldr runStyleToConstructor s rs) in
       extractSpaces f (runsToInlines o d runElems)
@@ -217,9 +216,6 @@ parPartsToInlines opts docx parparts =
   -- not mandatory.
   --
   --bottomUp (makeImagesSelfContained docx) $
-  --B.fromList $ bottomUp spanCorrect $
-  --bottomUp spanTrim $
-  --bottomUp spanReduce $
   mconcat $ map (parPartToInlines opts docx) parparts
 
 cellToBlocks :: ReaderOptions -> DocX -> Cell -> Blocks
@@ -324,45 +320,6 @@ spanRemove' il = [il]
 
 spanRemove :: [Inline] -> [Inline]
 spanRemove = concatMap spanRemove'
-
-spanTrim' :: Inline -> [Inline]
-spanTrim' il@(Span _ []) = [il]
-spanTrim' il@(Span attr (il':[]))
-  | il' == Space = [Span attr [], Space]
-  | otherwise = [il]
-spanTrim' (Span attr ils)
-  | head ils == Space && last ils == Space =
-    [Space, Span attr (init $ tail ils), Space]
-  | head ils == Space = [Space, Span attr (tail ils)]
-  | last ils == Space = [Span attr (init ils), Space]
-spanTrim' il = [il]
-
-spanTrim :: [Inline] -> [Inline]
-spanTrim = concatMap spanTrim'
-
-spanCorrect' :: Inline -> [Inline]
-spanCorrect' (Span ("", [], []) ils) = ils
-spanCorrect' (Span (ident, classes, kvs) ils)
-  | "emph" `elem` classes =
-    [Emph $ spanCorrect' $ Span (ident, (delete "emph" classes), kvs) ils]
-  | "strong" `elem` classes =
-      [Strong $ spanCorrect' $ Span (ident, (delete "strong" classes), kvs) ils]
-  | "smallcaps" `elem` classes =
-      [SmallCaps $ spanCorrect' $ Span (ident, (delete "smallcaps" classes), kvs) ils]
-  | "strike" `elem` classes =
-      [Strikeout $ spanCorrect' $ Span (ident, (delete "strike" classes), kvs) ils]
-  | "superscript" `elem` classes =
-      [Superscript $ spanCorrect' $ Span (ident, (delete "superscript" classes), kvs) ils]
-  | "subscript" `elem` classes =
-      [Subscript $ spanCorrect' $ Span (ident, (delete "subscript" classes), kvs) ils]
-  | (not . null) (codeSpans `intersect` classes) =
-         [Code (ident, (classes \\ codeSpans), kvs) (init $ unlines $ map ilToCode ils)]
-  | otherwise =
-      [Span (ident, classes, kvs) ils]
-spanCorrect' il = [il]
-
-spanCorrect :: [Inline] -> [Inline]
-spanCorrect = concatMap spanCorrect'
 
 removeEmptyPars :: [Block] -> [Block]
 removeEmptyPars blks = filter (\b -> b /= (Para [])) blks
