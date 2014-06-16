@@ -90,6 +90,9 @@ import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Base64 (encode)
 import System.FilePath (combine)
 import Data.Monoid
+import Debug.Trace
+import Control.Applicative ((<$>))
+import Data.Maybe (maybeToList)
 
 readDocx :: ReaderOptions
          -> BL.ByteString
@@ -99,20 +102,21 @@ readDocx opts bytes =
     Just docx -> Pandoc nullMeta (docxToBlocks opts docx)
     Nothing   -> error $ "couldn't parse docx file"
 
-runStyleToSpanAttr :: RunStyle -> (String, [String], [(String, String)])
-runStyleToSpanAttr rPr = ("",
-                          mapMaybe id [
-                            if isBold rPr then (Just "strong") else Nothing,
-                            if isItalic rPr then (Just "emph") else Nothing,
-                            if isSmallCaps rPr then (Just "smallcaps") else Nothing,
-                            if isStrike rPr then (Just "strike") else Nothing,
-                            if isSuperScript rPr then (Just "superscript") else Nothing,
-                            if isSubScript rPr then (Just "subscript") else Nothing,
-                            rStyle rPr],
-                          case underline rPr of
-                            Just fmt -> [("underline", fmt)]
-                            _        -> []
-                         )
+styles :: [(String, Inlines -> Inlines)]
+styles = [
+    ("b", B.strong)
+  , ("i", B.emph)
+  , ("smallCaps", B.smallcaps)
+  , ("strike", B.strikeout)
+  , ("superScript", B.superscript)
+  , ("subscript", B.subscript)]
+
+
+
+runStyleToConstructor :: (String, String) -> (Inlines -> Inlines)
+runStyleToConstructor ("rStyle", style) =  B.spanWith ("", [style], [])
+runStyleToConstructor ("u", fmt) = B.spanWith ("", [], [("underline", fmt)])
+runStyleToConstructor (s, _) = maybe id id (lookup s styles)
 
 parStyleToDivAttr :: ParagraphStyle -> (String, [String], [(String, String)])
 parStyleToDivAttr pPr = ("",
@@ -131,32 +135,36 @@ blockQuoteDivs = ["Quote", "BlockQuote"]
 codeDivs :: [String]
 codeDivs = ["SourceCode"]
 
-runElemToInlines :: RunElem -> Inlines
-runElemToInlines (TextRun s) = B.text s
-runElemToInlines (LnBrk) = B.linebreak
+runElemToInlines :: ReaderOptions -> DocX -> RunElem -> Inlines
+runElemToInlines _ _ (TextRun s) = B.text s
+runElemToInlines _ _ (LnBrk) = B.linebreak
+runElemToInlines o d (RunE rs) = runsToInlines o d rs
 
-runElemsToInlines :: [RunElem] -> Inlines
-runElemsToInlines = mconcat . (map runElemToInlines)
+runElemsToInlines :: ReaderOptions -> DocX -> [RunElem] -> Inlines
+runElemsToInlines o d = mconcat . (map (runElemToInlines o d))
+
+runToString :: Run -> String
+runToString (Run _ es) = concatMap (runElemToString) es
+runToString _ = ""
 
 runElemToString :: RunElem -> String
 runElemToString (TextRun s) = s
 runElemToString (LnBrk) = ['\n']
+runElemToString (RunE rs) = concatMap runToString rs
 
 runElemsToString :: [RunElem] -> String
 runElemsToString = concatMap runElemToString
 
 runsToInlines :: ReaderOptions -> DocX -> [Run] -> Inlines
-runsToInlines o d rs = mconcat $ map (runToInlines o d) rs
+runsToInlines o d rs = r
+  where r = mconcat $ map (runToInlines o d) rs
 
 runToInlines :: ReaderOptions -> DocX -> Run -> Inlines
-runToInlines _ _ (Run rs runElems)
-  | isJust (rStyle rs) && (fromJust (rStyle rs)) `elem` codeSpans =
-    case runStyleToSpanAttr rs == ("", [], []) of
-      True -> B.str (runElemsToString runElems)
-      False -> B.spanWith (runStyleToSpanAttr rs) (B.str (runElemsToString runElems))
-  | otherwise = case runStyleToSpanAttr rs == ("", [], []) of
-      True ->  runElemsToInlines runElems
-      False -> B.spanWith (runStyleToSpanAttr rs) (runElemsToInlines runElems)
+runToInlines o d (Run rs runElems) =
+  let style = lookup "rStyle" rs in
+  case isJust $ (flip elem codeSpans) <$> style of
+    True -> B.spanWith ("", maybeToList style , []) (B.str $ runElemsToString runElems)
+    False -> foldr runStyleToConstructor (runElemsToInlines o d runElems) rs
 runToInlines opts docx@(DocX _ notes _ _ _ ) (Footnote fnId) =
   case (getFootNote fnId notes) of
     Just bodyParts ->
@@ -171,7 +179,7 @@ runToInlines opts docx@(DocX _ notes _ _ _) (Endnote fnId) =
       B.note $ B.divWith ("", ["endnote"], []) mempty
 
 parPartToInlines :: ReaderOptions -> DocX -> ParPart -> Inlines
-parPartToInlines opts docx (PlainRun r) = runToInlines opts docx r
+parPartToInlines opts docx (PlainRun r) = runsToInlines opts docx [r]
 parPartToInlines _ _ (BookMark _ anchor) =
   B.spanWith (anchor, ["anchor"], []) mempty
 parPartToInlines _ (DocX _ _ _ rels _) (Drawing relid) =
@@ -215,12 +223,10 @@ parPartsToInlines opts docx parparts =
   -- We're going to skip data-uri's for now. It should be an option,
   -- not mandatory.
   --
-  (if False -- TODO depend on option
-      then bottomUp (makeImagesSelfContained docx)
-      else id) $
-  bottomUp spanCorrect $
-  bottomUp spanTrim $
-  bottomUp spanReduce $
+  --bottomUp (makeImagesSelfContained docx) $
+  --B.fromList $ bottomUp spanCorrect $
+  --bottomUp spanTrim $
+  --bottomUp spanReduce $
   mconcat $ map (parPartToInlines opts docx) parparts
 
 cellToBlocks :: ReaderOptions -> DocX -> Cell -> Blocks
@@ -258,7 +264,7 @@ bodyPartToBlock opts docx@(DocX _ _ numbering _ _) (ListItem pPr numId lvl parpa
 bodyPartToBlock _ _ (Tbl _ _ _ []) =
   B.para mempty -- Does this do something or can it be replaced with mempty?
 bodyPartToBlock opts docx (Tbl cap _ look (r:rs)) =
-  let caption = B.str cap
+  let caption = B.text cap
       (hdr, rows) = case firstRowFormatting look of
         True -> (Just r, rs)
         False -> (Nothing, r:rs)

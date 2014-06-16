@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 {-
 Copyright (C) 2014 Jesse Rosenthal <jrosenthal@jhu.edu>
 
@@ -57,8 +58,16 @@ import Data.Maybe
 import Data.List
 import System.FilePath
 import Data.Bits ((.|.))
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy as BL
 import qualified Text.Pandoc.UTF8 as UTF8
+import Text.Pandoc.Builder (Many(..))
+import qualified Text.Pandoc.Builder as B
+import Control.Applicative ((<$>), (<$))
+import Control.Monad (guard)
+import Data.Monoid
+import Data.Sequence hiding (filter)
+import Debug.Trace
+
 
 attrToNSPair :: Attr -> Maybe (String, String)
 attrToNSPair (Attr (QName s _ (Just "xmlns")) val) = Just (s, val)
@@ -91,7 +100,7 @@ archiveToDocument zf = do
   body <- elemToBody namespaces bodyElem
   return $ Document namespaces body
 
-type Media = [(FilePath, B.ByteString)]
+type Media = [(FilePath, BL.ByteString)]
 
 filePathIsMedia :: FilePath -> Bool
 filePathIsMedia fp =
@@ -99,7 +108,7 @@ filePathIsMedia fp =
   in
    (dir == "word/media/")
 
-getMediaPair :: Archive -> FilePath -> Maybe (FilePath, B.ByteString)
+getMediaPair :: Archive -> FilePath -> Maybe (FilePath, BL.ByteString)
 getMediaPair zf fp =
   case findEntryByPath fp zf of
     Just e -> Just (fp, fromEntry e)
@@ -319,7 +328,7 @@ elemToBodyPart ns element
   | qName (elName element) == "p" &&
     qURI (elName element) == (lookup "w" ns) =
       let parstyle = elemToParagraphStyle ns element
-          parparts = mapMaybe id
+          parparts = mergeParPart $ mapMaybe id
                      $ map (elemToParPart ns)
                      $ filterChildrenName (isRunOrLinkOrBookmark ns) element
       in
@@ -466,56 +475,57 @@ data Run = Run RunStyle [RunElem]
          | Endnote String
            deriving Show
 
-data RunElem = TextRun String | LnBrk
+
+mergeParPart :: [ParPart] -> [ParPart]
+mergeParPart [] = []
+mergeParPart [x] = [x]
+mergeParPart ((PlainRun x@(Run _ _)):(PlainRun y@(Run _ _)):xs) = 
+  mergeParPart $ (PlainRun (mergeRun x y)) : xs
+mergeParPart (x:xs)  = x : mergeParPart xs
+
+
+mergeRun :: Run -> Run -> Run
+mergeRun r1@(Run rs e) r2@(Run rs' e') = 
+  let is = traceShow (r1) (traceShow (r2) (rs `intersect` rs'))
+      is1 = rs \\ is
+      is2 = rs' \\ is in
+  case is of
+    [] ->  Run [] [RunE [r1, r2]]
+    _ -> let res = Run is1 e 
+             res' = Run is2 e' in
+             Run is ([RunE $ [mergeRun res res']])
+mergeRun a b = Run [] [RunE [a, b]]
+
+
+data RunElem = TextRun String | LnBrk | RunE [Run]
              deriving Show
 
-data RunStyle = RunStyle { isBold :: Bool
-                         , isItalic :: Bool
-                         , isSmallCaps :: Bool
-                         , isStrike :: Bool
-                         , isSuperScript :: Bool
-                         , isSubScript :: Bool
-                         , underline :: Maybe String
-                         , rStyle :: Maybe String }
-                deriving Show
+type Style = (String, String)
+
+type RunStyle = [Style] 
 
 defaultRunStyle :: RunStyle
-defaultRunStyle = RunStyle { isBold = False
-                           , isItalic = False
-                           , isSmallCaps = False
-                           , isStrike = False
-                           , isSuperScript = False
-                           , isSubScript = False
-                           , underline = Nothing
-                           , rStyle = Nothing
-                           } 
+defaultRunStyle = []  
 
 elemToRunStyle :: NameSpaces -> Element -> RunStyle
 elemToRunStyle ns element =
   case findChild (QName "rPr" (lookup "w" ns) (Just "w")) element of
     Just rPr ->
-      RunStyle
-      {
-        isBold = isJust $ findChild (QName "b" (lookup "w" ns) (Just "w")) rPr
-      , isItalic = isJust $ findChild (QName "i" (lookup "w" ns) (Just "w")) rPr
-      , isSmallCaps = isJust $ findChild (QName "smallCaps" (lookup "w" ns) (Just "w")) rPr
-      , isStrike = isJust $ findChild (QName "strike" (lookup "w" ns) (Just "w")) rPr
-      , isSuperScript =
-        (Just "superscript" ==
-        (findChild (QName "vertAlign" (lookup "w" ns) (Just "w")) rPr >>=
-         findAttr (QName "val" (lookup "w" ns) (Just "w"))))
-      , isSubScript =
-        (Just "subscript" ==
-        (findChild (QName "vertAlign" (lookup "w" ns) (Just "w")) rPr >>=
-         findAttr (QName "val" (lookup "w" ns) (Just "w"))))
-      , underline =
-        findChild (QName "u" (lookup "w" ns) (Just "w")) rPr >>=
-        findAttr (QName "val" (lookup "w" ns) (Just "w"))
-      , rStyle =
-        findChild (QName "rStyle" (lookup "w" ns) (Just "w")) rPr >>=
-        findAttr (QName "val" (lookup "w" ns) (Just "w"))
-        }
+      (mapMaybe (complex rPr) styles) 
     Nothing -> defaultRunStyle
+    where 
+      styles = ["b", "i", "smallCaps", "strike", "superScript", "subscript", "u", "rStyle"]
+      query env v = do
+        c <- findChild (QName v (lookup "w" ns) (Just "w")) env 
+        let attr = findAttr (QName "val" (lookup "w" ns) (Just "w")) c
+        case attr of
+          Just "false" -> Nothing
+          Just "none" -> Nothing
+          Nothing -> Just ""
+          res -> res
+      complex env v = (,) v <$> (query env v)
+      
+  
 
 elemToRun :: NameSpaces -> Element -> Maybe Run
 elemToRun ns element
