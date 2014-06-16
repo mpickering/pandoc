@@ -78,7 +78,6 @@ import Text.Pandoc.Options
 import Text.Pandoc.Builder (toList, Inlines, Blocks)
 import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.Generic (bottomUp)
-import Text.Pandoc
 import Text.Pandoc.MIME (getMimeType)
 import Text.Pandoc.UTF8 (toString)
 import Text.Pandoc.Readers.Docx.Parse
@@ -108,9 +107,8 @@ styles = [
   , ("i", B.emph)
   , ("smallCaps", B.smallcaps)
   , ("strike", B.strikeout)
-  , ("superScript", B.superscript)
+  , ("superscript", B.superscript)
   , ("subscript", B.subscript)]
-
 
 
 runStyleToConstructor :: (String, String) -> (Inlines -> Inlines)
@@ -135,36 +133,26 @@ blockQuoteDivs = ["Quote", "BlockQuote"]
 codeDivs :: [String]
 codeDivs = ["SourceCode"]
 
-runElemToInlines :: ReaderOptions -> DocX -> RunElem -> Inlines
-runElemToInlines _ _ (TextRun s) = B.text s
-runElemToInlines _ _ (LnBrk) = B.linebreak
-runElemToInlines o d (RunE rs) = runsToInlines o d rs
-
-runElemsToInlines :: ReaderOptions -> DocX -> [RunElem] -> Inlines
-runElemsToInlines o d = mconcat . (map (runElemToInlines o d))
 
 runToString :: Run -> String
-runToString (Run _ es) = concatMap (runElemToString) es
+runToString (Run _ es) = runsToString es
+runToString (TextRun s) = s
+runToString (LnBrk) = ['\n']
 runToString _ = ""
 
-runElemToString :: RunElem -> String
-runElemToString (TextRun s) = s
-runElemToString (LnBrk) = ['\n']
-runElemToString (RunE rs) = concatMap runToString rs
 
-runElemsToString :: [RunElem] -> String
-runElemsToString = concatMap runElemToString
+runsToString :: [Run] -> String
+runsToString = concatMap runToString
 
 runsToInlines :: ReaderOptions -> DocX -> [Run] -> Inlines
-runsToInlines o d rs = r
-  where r = mconcat $ map (runToInlines o d) rs
+runsToInlines o d rs = mconcat $ map (runToInlines o d) rs
 
 runToInlines :: ReaderOptions -> DocX -> Run -> Inlines
 runToInlines o d (Run rs runElems) =
   let style = lookup "rStyle" rs in
   case isJust $ (flip elem codeSpans) <$> style of
-    True -> B.spanWith ("", maybeToList style , []) (B.str $ runElemsToString runElems)
-    False -> foldr runStyleToConstructor (runElemsToInlines o d runElems) rs
+    True -> B.spanWith ("", maybeToList style , []) (B.text $ runsToString runElems)
+    False -> foldr runStyleToConstructor (runsToInlines o d runElems) rs
 runToInlines opts docx@(DocX _ notes _ _ _ ) (Footnote fnId) =
   case (getFootNote fnId notes) of
     Just bodyParts ->
@@ -177,6 +165,8 @@ runToInlines opts docx@(DocX _ notes _ _ _) (Endnote fnId) =
       B.note $ B.divWith ("", ["endnote"], []) (bodyPartsToBlock opts docx bodyParts)
     Nothing        ->
       B.note $ B.divWith ("", ["endnote"], []) mempty
+runToInlines _ _ (TextRun s) = B.text s
+runToInlines _ _ (LnBrk) = B.linebreak
 
 parPartToInlines :: ReaderOptions -> DocX -> ParPart -> Inlines
 parPartToInlines opts docx (PlainRun r) = runsToInlines opts docx [r]
@@ -314,30 +304,6 @@ bodyToBlocks opts docx (Body bps) =
 
 docxToBlocks :: ReaderOptions -> Docx -> [Block]
 docxToBlocks opts d@(Docx (Document _ body) _ _ _ _) = bodyToBlocks opts d body
-
-spanReduce :: [Inline] -> [Inline]
-spanReduce [] = []
-spanReduce ((Span (id1, classes1, kvs1) ils1) : ils)
-  | (id1, classes1, kvs1) == ("", [], []) = ils1 ++ (spanReduce ils)
-spanReduce (s1@(Span (id1, classes1, kvs1) ils1) :
-            s2@(Span (id2, classes2, kvs2) ils2) :
-            ils) =
-  let classes'  = classes1 `intersect` classes2
-      kvs'      = kvs1 `intersect` kvs2
-      classes1' = classes1 \\ classes'
-      kvs1'     = kvs1 \\ kvs'
-      classes2' = classes2 \\ classes'
-      kvs2'     = kvs2 \\ kvs'
-  in
-   case null classes' && null kvs' of
-     True -> s1 : (spanReduce (s2 : ils))
-     False -> let attr'  = ("", classes', kvs')
-                  attr1' = (id1, classes1', kvs1')
-                  attr2' = (id2, classes2', kvs2')
-              in
-               spanReduce (Span attr' [(Span attr1' ils1), (Span attr2' ils2)] :
-                           ils)
-spanReduce (il:ils) = il : (spanReduce ils)
 
 ilToCode :: Inline -> String
 ilToCode (Str s) = s

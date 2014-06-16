@@ -37,7 +37,6 @@ module Text.Pandoc.Readers.Docx.Parse (  Docx(..)
                                        , TblLook(..)
                                        , ParPart(..)
                                        , Run(..)
-                                       , RunElem(..)
                                        , Notes
                                        , Numbering
                                        , Relationship
@@ -88,14 +87,14 @@ archiveToDocx archive = do
   numbering <- archiveToNumbering archive
   return $ Docx doc notes numbering rels media
 
-data Document = Document NameSpaces Body 
+data Document = Document NameSpaces Body
           deriving Show
 
 archiveToDocument :: Archive -> Maybe Document
 archiveToDocument zf = do
   entry <- findEntryByPath "word/document.xml" zf
   docElem <- (parseXMLDoc . UTF8.toStringLazy . fromEntry) entry
-  let namespaces = mapMaybe attrToNSPair (elAttribs docElem) 
+  let namespaces = mapMaybe attrToNSPair (elAttribs docElem)
   bodyElem <- findChild (QName "body" (lookup "w" namespaces) Nothing) docElem
   body <- elemToBody namespaces bodyElem
   return $ Document namespaces body
@@ -264,17 +263,17 @@ relElemToRelationship element | qName (elName element) == "Relationship" =
     target <- findAttr (QName "Target" Nothing Nothing) element
     return $ Relationship (relId, target)
 relElemToRelationship _ = Nothing
-  
+
 
 archiveToRelationships :: Archive -> [Relationship]
-archiveToRelationships archive = 
+archiveToRelationships archive =
   let relPaths = filter filePathIsRel (filesInArchive archive)
       entries  = map fromJust $ filter isJust $ map (\f -> findEntryByPath f archive) relPaths
       relElems = map fromJust $ filter isJust $ map (parseXMLDoc . UTF8.toStringLazy . fromEntry) entries
       rels = map fromJust $ filter isJust $ map relElemToRelationship $ concatMap elChildren relElems
   in
    rels
-   
+
 data Body = Body [BodyPart]
           deriving Show
 
@@ -363,7 +362,7 @@ elemToTblLook ns element
     qURI (elName element) == (lookup "w" ns) =
       let firstRow = findAttr (QName "firstRow" (lookup "w" ns) (Just "w")) element
           val = findAttr (QName "val" (lookup "w" ns) (Just "w")) element
-          firstRowFmt = 
+          firstRowFmt =
             case firstRow of
               Just "1" -> True
               Just  _  -> False
@@ -447,7 +446,7 @@ elemToRow :: NameSpaces -> Element -> Maybe Row
 elemToRow ns element
   | qName (elName element) == "tr" &&
     qURI (elName element) == (lookup "w" ns) =
-      let 
+      let
         cells = findChildren (QName "tc" (lookup "w" ns) (Just "w")) element
       in
        Just $ Row (mapMaybe (elemToCell ns) cells)
@@ -470,62 +469,79 @@ data ParPart = PlainRun Run
              | Drawing String
              deriving Show
 
-data Run = Run RunStyle [RunElem]
-         | Footnote String 
+data Run = Run RunStyle [Run]
+         | Footnote String
          | Endnote String
+         | TextRun String
+         | LnBrk
            deriving Show
 
 
 mergeParPart :: [ParPart] -> [ParPart]
 mergeParPart [] = []
 mergeParPart [x] = [x]
-mergeParPart ((PlainRun x@(Run _ _)):(PlainRun y@(Run _ _)):xs) = 
-  mergeParPart $ (PlainRun (mergeRun x y)) : xs
+mergeParPart ((PlainRun (Run as rs)): PlainRun (Run as' rs'): xs) = 
+  let r1 = (Run as (mergeRun rs))
+      r2 = (Run as' (mergeRun rs')) in
+  case merge r1 r2 of 
+    (Nothing, r) ->  mergeParPart (PlainRun r : xs)
+    (Just done, r) -> PlainRun done : mergeParPart (PlainRun r : xs)
 mergeParPart (x:xs)  = x : mergeParPart xs
 
-
-mergeRun :: Run -> Run -> Run
-mergeRun r1@(Run rs e) r2@(Run rs' e') = 
+merge :: Run -> Run -> (Maybe Run, Run)
+merge r1@(Run rs e) r2@(Run rs' e') =
   let is = traceShow (r1) (traceShow (r2) (rs `intersect` rs'))
       is1 = rs \\ is
       is2 = rs' \\ is in
   case is of
-    [] ->  Run [] [RunE [r1, r2]]
-    _ -> let res = Run is1 e 
+    [] ->  (Just r1, r2)
+    _ -> let res = Run is1 e
              res' = Run is2 e' in
-             Run is ([RunE $ [mergeRun res res']])
-mergeRun a b = Run [] [RunE [a, b]]
+             (Nothing, Run is [res , res'] )
+merge a b = (Just a, b)
+
+mergeRun :: [Run] -> [Run] 
+mergeRun [] = []
+mergeRun [x] = [x]
+mergeRun (r1@(Run _ _):r2@(Run _ _): xs) = 
+  case merge r1 r2 of 
+    (Nothing, r) -> mergeRun (r : xs)
+    (Just done, r) -> done : mergeRun (r : xs)
+mergeRun (a:b:xs) = a : mergeRun (b :xs)
 
 
-data RunElem = TextRun String | LnBrk | RunE [Run]
-             deriving Show
+--data RunElem = TextRun String | LnBrk | Branch [Run]
+--             deriving Show
 
 type Style = (String, String)
 
-type RunStyle = [Style] 
+type RunStyle = [Style]
 
 defaultRunStyle :: RunStyle
-defaultRunStyle = []  
+defaultRunStyle = []
 
 elemToRunStyle :: NameSpaces -> Element -> RunStyle
 elemToRunStyle ns element =
   case findChild (QName "rPr" (lookup "w" ns) (Just "w")) element of
     Just rPr ->
-      (mapMaybe (complex rPr) styles) 
+      (mapMaybe (complex rPr) styles)
     Nothing -> defaultRunStyle
-    where 
-      styles = ["b", "i", "smallCaps", "strike", "superScript", "subscript", "u", "rStyle"]
+    where
+      styles = ["b", "i", "smallCaps", "strike", "vertAlign", "u", "rStyle"]
       query env v = do
-        c <- findChild (QName v (lookup "w" ns) (Just "w")) env 
+        c <- findChild (QName v (lookup "w" ns) (Just "w")) env
         let attr = findAttr (QName "val" (lookup "w" ns) (Just "w")) c
         case attr of
           Just "false" -> Nothing
           Just "none" -> Nothing
           Nothing -> Just ""
           res -> res
-      complex env v = (,) v <$> (query env v)
-      
-  
+      complex env v = alias v <$> (query env v)
+      alias "vertAlign" "subscript" = ("subscript", "")
+      alias "vertAlign" "superscript" = ("superscript", "")
+      alias v k = (v, k)
+
+
 
 elemToRun :: NameSpaces -> Element -> Maybe Run
 elemToRun ns element
@@ -541,13 +557,13 @@ elemToRun ns element
             findChild (QName "endnoteReference" (lookup "w" ns) (Just "w")) element >>=
             findAttr (QName "id" (lookup "w" ns) (Just "w"))
           of
-            Just s -> Just $ Endnote s 
+            Just s -> Just $ Endnote s
             Nothing ->  Just $
                         Run (elemToRunStyle ns element)
                         (elemToRunElems ns element)
 elemToRun _ _ = Nothing
 
-elemToRunElem :: NameSpaces -> Element -> Maybe RunElem
+elemToRunElem :: NameSpaces -> Element -> Maybe Run
 elemToRunElem ns element
   | qName (elName element) == "t" &&
     qURI (elName element) == (lookup "w" ns) =
@@ -558,7 +574,7 @@ elemToRunElem ns element
   | otherwise = Nothing
 
 
-elemToRunElems :: NameSpaces -> Element -> [RunElem]
+elemToRunElems :: NameSpaces -> Element -> [Run]
 elemToRunElems ns element
   | qName (elName element) == "r" &&
     qURI (elName element) == (lookup "w" ns) =
@@ -611,4 +627,4 @@ type Target = String
 type Anchor = String
 type BookMarkId = String
 type RelId = String
-               
+
