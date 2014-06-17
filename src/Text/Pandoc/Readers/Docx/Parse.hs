@@ -41,7 +41,7 @@ module Text.Pandoc.Readers.Docx.Parse (  Docx(..)
                                        , Numbering
                                        , Relationship
                                        , Media
-                                       , RunStyle(..)
+                                       , RunStyle
                                        , ParagraphStyle(..)
                                        , Row(..)
                                        , Cell(..)
@@ -59,12 +59,6 @@ import System.FilePath
 import Data.Bits ((.|.))
 import qualified Data.ByteString.Lazy as BL
 import qualified Text.Pandoc.UTF8 as UTF8
-import Text.Pandoc.Builder (Many(..))
-import qualified Text.Pandoc.Builder as B
-import Control.Applicative ((<$>), (<$))
-import Control.Monad (guard)
-import Data.Monoid
-import Data.Sequence hiding (filter)
 import Debug.Trace
 
 
@@ -480,31 +474,40 @@ data Run = Run RunStyle [Run]
 mergeParPart :: [ParPart] -> [ParPart]
 mergeParPart [] = []
 mergeParPart [x] = [x]
-mergeParPart ((PlainRun (Run as rs)): PlainRun (Run as' rs'): xs) = 
+mergeParPart ((PlainRun (Run as rs)): PlainRun (Run as' rs'): xs) =
   let r1 = (Run as (mergeRun rs))
       r2 = (Run as' (mergeRun rs')) in
-  case merge r1 r2 of 
+  case merge r1 r2 of
     (Nothing, r) ->  mergeParPart (PlainRun r : xs)
     (Just done, r) -> PlainRun done : mergeParPart (PlainRun r : xs)
 mergeParPart (x:xs)  = x : mergeParPart xs
 
 merge :: Run -> Run -> (Maybe Run, Run)
-merge r1@(Run rs e) r2@(Run rs' e') =
-  let is = traceShow (r1) (traceShow (r2) (rs `intersect` rs'))
+merge r1@(Run rs e) (Run rs' e') =
+  let is = (rs `intersect` rs')
       is1 = rs \\ is
       is2 = rs' \\ is in
   case is of
-    [] ->  (Just r1, r2)
+    [] ->  (Just r1, Run rs' (mergeRun e'))
     _ -> let res = Run is1 e
              res' = Run is2 e' in
-             (Nothing, Run is [res , res'] )
+             (Nothing, flatten $ Run is [res , res'] )
 merge a b = (Just a, b)
 
-mergeRun :: [Run] -> [Run] 
+flatten :: Run -> Run
+flatten (Run is rs) = Run is (concatMap flatten' rs)
+flatten x = x
+
+flatten' :: Run -> [Run]
+flatten' (Run [] rs)  = concatMap flatten' rs
+flatten' (Run is rs)  = [Run is (concatMap flatten' rs)]
+flatten' x  = [x]
+
+mergeRun :: [Run] -> [Run]
 mergeRun [] = []
 mergeRun [x] = [x]
-mergeRun (r1@(Run _ _):r2@(Run _ _): xs) = 
-  case merge r1 r2 of 
+mergeRun (r1@(Run _ _):r2@(Run _ _): xs) =
+  case merge r1 r2 of
     (Nothing, r) -> mergeRun (r : xs)
     (Just done, r) -> done : mergeRun (r : xs)
 mergeRun (a:b:xs) = a : mergeRun (b :xs)

@@ -93,6 +93,7 @@ import Data.Monoid
 import Debug.Trace
 import Control.Applicative ((<$>))
 import Data.Maybe (maybeToList)
+import Control.Monad (guard)
 
 readDocx :: ReaderOptions
          -> BL.ByteString
@@ -144,24 +145,25 @@ runToString _ = ""
 runsToString :: [Run] -> String
 runsToString = concatMap runToString
 
-runsToInlines :: ReaderOptions -> DocX -> [Run] -> Inlines
-runsToInlines o d rs = mconcat $ map (runToInlines o d) rs
+runsToInlines :: ReaderOptions -> Docx -> [Run] -> Inlines
+runsToInlines o d rs = traceShow rs
+  mconcat $ map (runToInlines o d) rs
 
-runToInlines :: ReaderOptions -> DocX -> Run -> Inlines
+runToInlines :: ReaderOptions -> Docx -> Run -> Inlines
 runToInlines o d (Run rs runElems) =
   let style = lookup "rStyle" rs in
-  case isJust $ (flip elem codeSpans) <$> style of
+  case isJust $ style >>= guard . flip elem codeSpans  of
     True -> B.code (runsToString runElems)
     False ->
       let f = (\s -> foldr runStyleToConstructor s rs) in
       extractSpaces f (runsToInlines o d runElems)
-runToInlines opts docx@(DocX _ notes _ _ _ ) (Footnote fnId) =
+runToInlines opts docx@(Docx _ notes _ _ _ ) (Footnote fnId) =
   case (getFootNote fnId notes) of
     Just bodyParts ->
       B.note $ B.divWith ("", ["footnote"], []) (bodyPartsToBlock opts docx bodyParts)
     Nothing        ->
       B.note $ B.divWith ("", ["footnote"], []) mempty
-runToInlines opts docx@(DocX _ notes _ _ _) (Endnote fnId) =
+runToInlines opts docx@(Docx _ notes _ _ _) (Endnote fnId) =
   case (getEndNote fnId notes) of
     Just bodyParts ->
       B.note $ B.divWith ("", ["endnote"], []) (bodyPartsToBlock opts docx bodyParts)
@@ -170,17 +172,17 @@ runToInlines opts docx@(DocX _ notes _ _ _) (Endnote fnId) =
 runToInlines _ _ (TextRun s) = B.text s
 runToInlines _ _ (LnBrk) = B.linebreak
 
-parPartToInlines :: ReaderOptions -> DocX -> ParPart -> Inlines
+parPartToInlines :: ReaderOptions -> Docx -> ParPart -> Inlines
 parPartToInlines opts docx (PlainRun r) = runsToInlines opts docx [r]
 parPartToInlines _ _ (BookMark _ anchor) =
   B.spanWith (anchor, ["anchor"], []) mempty
-parPartToInlines _ (DocX _ _ _ rels _) (Drawing relid) =
+parPartToInlines _ (Docx _ _ _ rels _) (Drawing relid) =
   case lookupRelationship relid rels of
     Just target -> B.image (combine "word" target) "" mempty
     Nothing     -> B.image "" "" mempty
 parPartToInlines opts docx (InternalHyperLink anchor runs) =
   B.link  ('#' : anchor)  "" (runsToInlines opts docx runs)
-parPartToInlines opts docx@(DocX _ _ _ rels _) (ExternalHyperLink relid runs) =
+parPartToInlines opts docx@(Docx _ _ _ rels _) (ExternalHyperLink relid runs) =
   case lookupRelationship relid rels of
     Just target ->
       B.link target "" (runsToInlines opts docx runs)
@@ -209,7 +211,7 @@ makeHeaderAnchors h@(Header n (_, classes, kvs) ils) =
     _ -> h
 makeHeaderAnchors blk = blk
 
-parPartsToInlines :: ReaderOptions -> DocX -> [ParPart] -> Inlines
+parPartsToInlines :: ReaderOptions -> Docx -> [ParPart] -> Inlines
 parPartsToInlines opts docx parparts =
   --
   -- We're going to skip data-uri's for now. It should be an option,
@@ -218,19 +220,19 @@ parPartsToInlines opts docx parparts =
   --bottomUp (makeImagesSelfContained docx) $
   mconcat $ map (parPartToInlines opts docx) parparts
 
-cellToBlocks :: ReaderOptions -> DocX -> Cell -> Blocks
+cellToBlocks :: ReaderOptions -> Docx -> Cell -> Blocks
 cellToBlocks opts docx (Cell bps) = mconcat $ map (bodyPartToBlock opts docx) bps
 
-rowToBlocksList :: ReaderOptions -> DocX -> Row -> [Blocks]
+rowToBlocksList :: ReaderOptions -> Docx -> Row -> [Blocks]
 rowToBlocksList opts docx (Row cells) = map (cellToBlocks opts docx) cells
 
-bodyPartsToBlock :: ReaderOptions -> DocX -> [BodyPart] -> Blocks
+bodyPartsToBlock :: ReaderOptions -> Docx -> [BodyPart] -> Blocks
 bodyPartsToBlock o d bs = mconcat $ map (bodyPartToBlock o d) bs
 
-bodyPartToBlock :: ReaderOptions -> DocX -> BodyPart -> Blocks
+bodyPartToBlock :: ReaderOptions -> Docx -> BodyPart -> Blocks
 bodyPartToBlock opts docx (Paragraph pPr parparts) =
   B.divWith (parStyleToDivAttr pPr) (B.para $ parPartsToInlines opts docx parparts)
-bodyPartToBlock opts docx@(DocX _ _ numbering _ _) (ListItem pPr numId lvl parparts) =
+bodyPartToBlock opts docx@(Docx _ _ numbering _ _) (ListItem pPr numId lvl parparts) =
   let
     kvs = case lookupLevel numId lvl numbering of
       Just (_, fmt, txt, Just start) -> [ ("level", lvl)
