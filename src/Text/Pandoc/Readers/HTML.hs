@@ -34,6 +34,7 @@ module Text.Pandoc.Readers.HTML ( readHtml
                                 , isBlockTag
                                 , isTextTag
                                 , isCommentTag
+                                , testRead
                                 ) where
 
 import Text.HTML.TagSoup
@@ -52,6 +53,10 @@ import Control.Applicative ( (<$>), (<$), (<*) )
 import Data.Monoid
 import Text.Printf (printf)
 import Debug.Trace (trace)
+
+import qualified Text.Pandoc.UTF8 as UTF8
+import Debug.Trace
+import qualified Data.Set as Set
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -98,7 +103,8 @@ block = do
   tr <- getOption readerTrace
   pos <- getPosition
   res <- choice
-            [ pPara
+            [ eSwitch
+            , pPara
             , pHeader
             , pBlockQuote
             , pCodeBlock
@@ -114,6 +120,40 @@ block = do
   when tr $ trace (printf "line %d: %s" (sourceLine pos)
              (take 60 $ show $ B.toList res)) (return ())
   return res
+
+
+namespaces :: [(String, TagParser Blocks)]
+namespaces = [("http://www.w3.org/1998/Math/MathML", pRawHtmlBlock)
+             ,("http://www.xml-cml.org/schema", pRawHtmlBlock)]
+
+testRead :: String -> IO Pandoc
+testRead s = readHtml ds {readerParseRaw = True} <$> UTF8.readFile s
+  where
+    rs = readerExtensions def
+    ds = def {readerExtensions = foldr (Set.insert) rs [Ext_raw_html, Ext_epub_html_exts] }
+
+
+eSwitch :: TagParser Blocks
+eSwitch = try $ do
+  guardEnabled Ext_epub_html_exts
+  pSatisfy (~== TagOpen "epub:switch" [])
+  cases <- mconcat <$> manyTill (eCase >>~ skipMany pBlank)
+    (lookAhead $ try $ pSatisfy (~== TagOpen "epub:default" []))
+  skipMany pBlank
+  fallback <- pInTags "epub:default" (skipMany pBlank >> block >>~ skipMany pBlank)
+  skipMany pBlank
+  pSatisfy (~== TagClose "epub:switch")
+  return (fromMaybe fallback cases)
+
+
+eCase :: TagParser (Maybe Blocks)
+eCase = try $ do
+  skipMany pBlank
+  TagOpen _ attr <- lookAhead $ pSatisfy $ (~== TagOpen "epub:case" [])
+  case (flip lookup namespaces) =<< lookup "required-namespace" attr of
+    Just p -> Just <$> pInTags "epub:case" p
+    Nothing -> Nothing <$ manyTill pAnyTag (pSatisfy (~== TagClose "epub:case"))
+
 
 
 pList :: TagParser Blocks
@@ -705,7 +745,27 @@ htmlTag f = try $ do
 mkAttr :: [(String, String)] -> Attr
 mkAttr attr = (attribsId, attribsClasses, attribsKV)
   where attribsId = fromMaybe "" $ lookup "id" attr
-        attribsClasses = words $ fromMaybe "" $ lookup "class" attr
+        attribsClasses = (words $ fromMaybe "" $ lookup "class" attr) ++ epubTypes
         attribsKV = filter (\(k,_) -> k /= "class" && k /= "id") attr
+        epubTypes = [fromMaybe "" $ lookup "epub:type" attr]
 
+
+
+-- EPUB Specific
+--
+groupingContent :: [String]
+groupingContent = ["p", "hr", "pre", "blockquote", "ol"
+                  , "ul", "li", "dl", "dt", "dt", "dd"
+                  , "figure", "figcaption", "div", "main"]
+
+sectioningContent :: [String]
+sectioningContent = ["article", "aside", "nav", "section"]
+
+types :: [(String, ([String], Int))]
+types =  -- Document divisions
+   map (\s -> (s, (["section", "body"], 0)))
+    ["volume", "part", "chapter", "division"]
+  ++ -- Document section and components
+  [
+    ("abstract",  ([], 0))]
 
