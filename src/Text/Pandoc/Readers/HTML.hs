@@ -446,12 +446,24 @@ pLineBreak = do
   return B.linebreak
 
 pLink :: TagParser Inlines
-pLink = try $ do
+pLink = pRelLink <|> pAnchor
+
+pAnchor :: TagParser Inlines
+pAnchor = try $ do
+  tag <- pSatisfy (tagOpenLit "a" (isJust . lookup "id"))
+  return $ B.spanWith (fromAttrib "id" tag , [], []) mempty
+
+pRelLink :: TagParser Inlines
+pRelLink = try $ do
   tag <- pSatisfy (tagOpenLit "a" (isJust . lookup "href"))
   let url = fromAttrib "href" tag
   let title = fromAttrib "title" tag
+  let uid = fromAttrib "id" tag
+  let span = case uid of
+              [] -> id
+              s  -> B.spanWith (s, [], [])
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
-  return $ B.link (escapeURI url) title lab
+  return $ span $ B.link (escapeURI url) title lab
 
 pImage :: TagParser Inlines
 pImage = do

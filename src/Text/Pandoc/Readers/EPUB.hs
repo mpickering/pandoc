@@ -3,8 +3,10 @@ module Text.Pandoc.Readers.EPUB
   where
 
 import Text.Pandoc.Definition hiding (Attr)
+import Text.Pandoc.Walk 
 import Text.Pandoc.Readers.HTML (readHtml)
 import Text.Pandoc.Options
+import Text.Pandoc.Shared (escapeURI)
 import Codec.Archive.Zip
 import Text.XML.Light
 import Data.Maybe(fromJust)
@@ -14,6 +16,7 @@ import qualified Text.Pandoc.UTF8 as UTF8
 import Control.Applicative ((<$>))
 import Control.Monad (guard)
 import Data.Monoid
+import Data.List (isPrefixOf)
 import Debug.Trace
 import Data.Maybe
 import qualified Data.Map as M
@@ -51,15 +54,48 @@ archiveToEPUB os archive = do
 --  meta  <- parseMeta content
   items <- parseManifest content
   spine <- parseSpine items content
-  mconcat <$> mapM (parseSpineElem root) spine
+  let escapedSpine = map (escapeURI . fst) spine
+  walk (prependHash escapedSpine) $ 
+    mconcat <$> mapM (parseSpineElem root) spine
   where 
     parseSpineElem r (path, mime) = do
       fname <- findEntryByPath (r </> path) archive
       let fileContents = (UTF8.toStringLazy . fromEntry) fname
-      return (readHtml os fileContents)
+      let doc = readHtml os fileContents
+      return (fixInternalReferences path doc)
+    
+    
      
+fixInternalReferences :: String -> Pandoc -> Pandoc
+fixInternalReferences s = 
+  (walk $ fixBlockIRs s') . (walk $ fixInlineIRs s')
+  where 
+    s' = escapeURI s
   
+fixInlineIRs :: String -> Inline -> Inline
+fixInlineIRs s (Span (ident, cs, kvs) v ) =
+  Span (s ++ "#" ++ ident, cs, kvs) v
+fixInlineIRs s (Code (ident, cs, kvs) code) = 
+  Code (s ++ "#" ++ ident, cs, kvs) code
+fixInlineIRs _ v = v
 
+prependHash :: [String] -> Inline -> Inline
+prependHash ps l@(Link is (url, tit))
+  | or [s `isPrefixOf` url | s <- ps] = 
+    Link is ('#':url, tit)
+  | otherwise = l
+prependHash _ i = i
+
+
+
+fixBlockIRs :: String -> Block -> Block
+fixBlockIRs s (Div (ident, cs, kvs) b) =
+  Div ( s ++ "#" ++ ident , cs, kvs) b
+fixBlockIRs s (Header i (ident, cs, kvs) b) = 
+  Header i (s ++ "#" ++ ident, cs, kvs) b 
+fixBlockIRs s (CodeBlock (ident, cs, kvs) code) = 
+  CodeBlock (s ++ "#" ++ ident, cs, kvs) code
+fixBlockIRs _ b = b
   
 
 type MIME = String
