@@ -53,6 +53,8 @@ import Control.Applicative ( (<$>), (<$), (<*) )
 import Data.Monoid
 import Text.Printf (printf)
 import Debug.Trace (trace)
+import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
+import Text.TeXMath (mathMLToLaTeX, DisplayType(..))
 
 import qualified Text.Pandoc.UTF8 as UTF8
 import Debug.Trace
@@ -378,6 +380,7 @@ inline = choice
            , pImage
            , pCode
            , pSpan
+           , pMath
            , pRawHtmlInline
            ]
 
@@ -493,6 +496,17 @@ pRawHtmlInline = do
   if parseRaw
      then return $ B.rawInline "html" $ renderTags' [result]
      else return mempty
+
+pMath :: TagParser Inlines
+pMath = do
+  open@(TagOpen _ attr) <- pSatisfy $ tagOpen (=="math") (const True)
+  let displayType =
+        maybe DisplayBlock (\x -> if (x == "inline") then DisplayInline else DisplayBlock)
+          (lookup "display" attr)
+  contents <- manyTill pAnyTag (pSatisfy (~== TagClose "math"))
+  let math = mathMLToLaTeX displayType $
+              (renderTags $ [open] ++ contents ++ [TagClose "math"])
+  return $ either (const mempty) B.singleton math
 
 pInlinesInTags :: String -> (Inlines -> Inlines)
                -> TagParser Inlines
