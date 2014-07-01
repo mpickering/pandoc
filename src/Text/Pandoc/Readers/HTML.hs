@@ -125,8 +125,7 @@ block = do
 
 
 namespaces :: [(String, TagParser Blocks)]
-namespaces = [("http://www.w3.org/1998/Math/MathML", pRawHtmlBlock)
-             ,("http://www.xml-cml.org/schema", pRawHtmlBlock)]
+namespaces = [("http://www.w3.org/1998/Math/MathML", B.para <$> pMath)]
 
 testRead :: String -> IO Pandoc
 testRead s = readHtml ds {readerParseRaw = True} <$> UTF8.readFile s
@@ -139,8 +138,9 @@ eSwitch :: TagParser Blocks
 eSwitch = try $ do
   guardEnabled Ext_epub_html_exts
   pSatisfy (~== TagOpen "epub:switch" [])
-  cases <- mconcat <$> manyTill (eCase >>~ skipMany pBlank)
-    (lookAhead $ try $ pSatisfy (~== TagOpen "epub:default" []))
+  cases <- getFirst . mconcat <$>
+            manyTill (First <$> (eCase >>~ skipMany pBlank) )
+              (lookAhead $ try $ pSatisfy (~== TagOpen "epub:default" []))
   skipMany pBlank
   fallback <- pInTags "epub:default" (skipMany pBlank >> block >>~ skipMany pBlank)
   skipMany pBlank
@@ -462,11 +462,11 @@ pRelLink = try $ do
   let url = fromAttrib "href" tag
   let title = fromAttrib "title" tag
   let uid = fromAttrib "id" tag
-  let span = case uid of
+  let spanC = case uid of
               [] -> id
               s  -> B.spanWith (s, [], [])
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
-  return $ span $ B.link (escapeURI url) title lab
+  return $ spanC $ B.link (escapeURI url) title lab
 
 pImage :: TagParser Inlines
 pImage = do
@@ -501,7 +501,7 @@ pMath :: TagParser Inlines
 pMath = do
   open@(TagOpen _ attr) <- pSatisfy $ tagOpen (=="math") (const True)
   let displayType =
-        maybe DisplayBlock (\x -> if (x == "inline") then DisplayInline else DisplayBlock)
+        maybe DisplayInline (\x -> if (x == "inline") then DisplayInline else DisplayBlock)
           (lookup "display" attr)
   contents <- manyTill pAnyTag (pSatisfy (~== TagClose "math"))
   let math = mathMLToLaTeX displayType $
