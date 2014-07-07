@@ -49,7 +49,7 @@ import Data.Maybe ( fromMaybe, isJust )
 import Data.List ( intercalate )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
-import Control.Applicative ( (<$>), (<$), (<*) )
+import Control.Applicative ( (<$>), (<$), (<*), (*>) )
 import Data.Monoid
 import Text.Printf (printf)
 import Debug.Trace (trace)
@@ -71,15 +71,18 @@ readHtml :: ReaderOptions -- ^ Reader options
          -> String        -- ^ String to parse (assumes @'\n'@ line endings)
          -> Pandoc
 readHtml opts inp =
-  case runParser parseDoc def{ stateOptions = opts } "source" tags of
+  case runParser parseDoc def{ stateOptions = ds } "source" tags of
           Left err'    -> error $ "\nError at " ++ show  err'
           Right result -> result
-    where tags = canonicalizeTags $
+    where tags = stripPrefixes . canonicalizeTags $
                    parseTagsOptions parseOptions{ optTagPosition = True } inp
           parseDoc = do
              blocks <- (fixPlains False) . mconcat <$> manyTill block eof
              meta <- stateMeta <$> getState
              return $ Pandoc meta (B.toList blocks)
+          rs = readerExtensions def
+          ds = opts {readerExtensions = foldr (Set.insert) rs [Ext_raw_html, Ext_epub_html_exts] }
+
 
 type TagParser = Parser [Tag String] ParserState
 
@@ -137,26 +140,25 @@ testRead s = readHtml ds {readerParseRaw = True} <$> UTF8.readFile s
 eSwitch :: TagParser Blocks
 eSwitch = try $ do
   guardEnabled Ext_epub_html_exts
-  pSatisfy (~== TagOpen "epub:switch" [])
+  pSatisfy (~== TagOpen "switch" [])
   cases <- getFirst . mconcat <$>
-            manyTill (First <$> (eCase >>~ skipMany pBlank) )
-              (lookAhead $ try $ pSatisfy (~== TagOpen "epub:default" []))
+            manyTill (First <$> (eCase <* skipMany pBlank) )
+              (lookAhead $ try $ pSatisfy (~== TagOpen "default" []))
   skipMany pBlank
-  fallback <- pInTags "epub:default" (skipMany pBlank >> block >>~ skipMany pBlank)
+  fallback <- pInTags "default" (skipMany pBlank >> block >>~ skipMany pBlank)
   skipMany pBlank
-  pSatisfy (~== TagClose "epub:switch")
+  pSatisfy (~== TagClose "switch")
   return (fromMaybe fallback cases)
 
 
 eCase :: TagParser (Maybe Blocks)
 eCase = try $ do
   skipMany pBlank
-  TagOpen _ attr <- lookAhead $ pSatisfy $ (~== TagOpen "epub:case" [])
+  TagOpen _ attr <- lookAhead $ pSatisfy $ (~== TagOpen "case" [])
+  let b = (flip lookup namespaces) =<< lookup "required-namespace" attr
   case (flip lookup namespaces) =<< lookup "required-namespace" attr of
-    Just p -> Just <$> pInTags "epub:case" p
-    Nothing -> Nothing <$ manyTill pAnyTag (pSatisfy (~== TagClose "epub:case"))
-
-
+    Just p -> Just <$> (pInTags "case" (skipMany pBlank *> p <* skipMany pBlank))
+    Nothing -> Nothing <$ manyTill pAnyTag (pSatisfy (~== TagClose "case"))
 
 pList :: TagParser Blocks
 pList = pBulletList <|> pOrderedList <|> pDefinitionList
@@ -675,8 +677,11 @@ blockDocBookTags = ["calloutlist", "bibliolist", "glosslist", "itemizedlist",
                     "classsynopsis", "blockquote", "epigraph", "msgset",
                     "sidebar", "title"]
 
+epubTags :: [String]
+epubTags = ["case", "switch"]
+
 blockTags :: [String]
-blockTags = blockHtmlTags ++ blockDocBookTags
+blockTags = blockHtmlTags ++ blockDocBookTags ++ epubTags
 
 isInlineTag :: Tag String -> Bool
 isInlineTag t = tagOpen isInlineTagName (const True) t ||
@@ -775,7 +780,20 @@ mkAttr attr = (attribsId, attribsClasses, attribsKV)
         attribsKV = filter (\(k,_) -> k /= "class" && k /= "id") attr
         epubTypes = [fromMaybe "" $ lookup "epub:type" attr]
 
+-- Strip namespace prefixes
+stripPrefixes :: [Tag String] -> [Tag String]
+stripPrefixes = map stripPrefix
 
+stripPrefix :: Tag String -> Tag String
+stripPrefix (TagOpen s as) = TagOpen (stripPrefix' s) as
+stripPrefix (TagClose s) = TagClose (stripPrefix' s)
+stripPrefix x = x
+
+stripPrefix' :: String -> String
+stripPrefix' s =
+  case span (/= ':') s of
+    (s, "") -> s
+    (_, (_:ts)) -> ts
 
 -- EPUB Specific
 --
