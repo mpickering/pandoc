@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Text.Pandoc.Readers.EPUB
   (readEPUB, testRead)
   where
@@ -7,6 +9,7 @@ import Text.Pandoc.Walk
 import Text.Pandoc.Readers.HTML (readHtml)
 import Text.Pandoc.Options
 import Text.Pandoc.Shared (escapeURI)
+import qualified Text.Pandoc.Builder as B
 import Codec.Archive.Zip
 import Text.XML.Light
 import Data.Maybe(fromJust)
@@ -51,12 +54,14 @@ emptyName s = QName s Nothing Nothing
 archiveToEPUB :: ReaderOptions -> Archive -> Maybe Pandoc
 archiveToEPUB os archive = do
   (root, content) <- getManifest archive
---  meta  <- parseMeta content
+  meta  <- parseMeta content
   items <- parseManifest content
   spine <- parseSpine items content
   let escapedSpine = map (escapeURI . fst) spine
-  walk (prependHash escapedSpine) $ 
-    mconcat <$> mapM (parseSpineElem root) spine
+  Pandoc _ bs <- 
+    walk (prependHash escapedSpine) $ 
+      mconcat <$> mapM (parseSpineElem root) spine
+  return $ Pandoc meta bs
   where 
     parseSpineElem r (path, mime) = do
       fname <- findEntryByPath (r </> path) archive
@@ -64,8 +69,6 @@ archiveToEPUB os archive = do
       let doc = readHtml os fileContents
       return (fixInternalReferences path doc)
     
-    
-     
 fixInternalReferences :: String -> Pandoc -> Pandoc
 fixInternalReferences s = 
   (walk $ fixBlockIRs s') . (walk $ fixInlineIRs s')
@@ -86,8 +89,6 @@ prependHash ps l@(Link is (url, tit))
   | otherwise = l
 prependHash _ i = i
 
-
-
 fixBlockIRs :: String -> Block -> Block
 fixBlockIRs s (Div (ident, cs, kvs) b) =
   Div ( s ++ "#" ++ ident , cs, kvs) b
@@ -96,7 +97,6 @@ fixBlockIRs s (Header i (ident, cs, kvs) b) =
 fixBlockIRs s (CodeBlock (ident, cs, kvs) code) = 
   CodeBlock (s ++ "#" ++ ident, cs, kvs) code
 fixBlockIRs _ b = b
-  
 
 type MIME = String
 
@@ -131,11 +131,27 @@ parseSpine is e = do
       guard linear
       findAttr (emptyName "idref") e
 
-
 parseMeta :: Element -> Maybe Meta
-parseMeta = undefined
+parseMeta content = do 
+  meta <- findElement (dfName "metadata") content
+  let dcspace (QName _ (Just "http://purl.org/dc/elements/1.1/") (Just "dc")) = True
+      dcspace _ = False
+  let dcs = filterChildrenName dcspace meta
+  
+  let r = foldr parseMetaItem nullMeta dcs 
+  traceShowId (return r)
+   
+stripNamespace :: QName -> String
+stripNamespace (QName v _ _) = v
 
-
+parseMetaItem :: Element -> Meta -> Meta
+parseMetaItem e@(stripNamespace . elName -> field) meta = 
+  B.setMeta (rename field) (B.str $ strContent e) meta
+  
+  
+rename :: String -> String
+rename "creator" = "author"
+rename s = s
 
 getManifest :: Archive -> Maybe (String, Element)
 getManifest archive = do
