@@ -65,9 +65,17 @@ archiveToEPUB os archive = do
   where 
     parseSpineElem r (path, mime) = do
       fname <- findEntryByPath (r </> path) archive
-      let fileContents = (UTF8.toStringLazy . fromEntry) fname
-      let doc = readHtml os fileContents
+      let doc = mimeToReader mime $ fromEntry fname
       return (fixInternalReferences path doc)
+    mimeToReader s = 
+      traceShow s (
+      case s of 
+        "application/xhtml+xml" -> readHtml os . UTF8.toStringLazy
+        "image/gif" -> const mempty
+        "image/jpeg" -> const mempty
+        "image/png" -> const mempty
+        _ -> const mempty
+
     
 fixInternalReferences :: String -> Pandoc -> Pandoc
 fixInternalReferences s = 
@@ -99,9 +107,6 @@ fixBlockIRs s (CodeBlock (ident, cs, kvs) code) =
 fixBlockIRs _ b = b
 
 type MIME = String
-
-mimeToReader :: MIME -> (ReaderOptions -> String -> Pandoc)
-mimeToReader m = readHtml
 
 type Items = M.Map String (FilePath, MIME)
 
