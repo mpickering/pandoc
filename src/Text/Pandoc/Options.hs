@@ -143,7 +143,6 @@ pandocExtensions = Set.fromList
   , Ext_header_attributes
   , Ext_implicit_header_references
   , Ext_line_blocks
-  , Ext_epub_html_exts
   ]
 
 phpMarkdownExtraExtensions :: Set Extension

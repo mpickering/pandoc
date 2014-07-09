@@ -71,7 +71,7 @@ readHtml :: ReaderOptions -- ^ Reader options
          -> String        -- ^ String to parse (assumes @'\n'@ line endings)
          -> Pandoc
 readHtml opts inp =
-  case runParser parseDoc def{ stateOptions = ds } "source" tags of
+  case runParser parseDoc def{ stateOptions = opts } "source" tags of
           Left err'    -> error $ "\nError at " ++ show  err'
           Right result -> result
     where tags = stripPrefixes . canonicalizeTags $
@@ -80,8 +80,6 @@ readHtml opts inp =
              blocks <- (fixPlains False) . mconcat <$> manyTill block eof
              meta <- stateMeta <$> getState
              return $ Pandoc meta (B.toList blocks)
-          rs = readerExtensions def
-          ds = opts {readerExtensions = foldr (Set.insert) rs [Ext_raw_html, Ext_epub_html_exts] }
 
 
 type TagParser = Parser [Tag String] ParserState

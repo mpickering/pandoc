@@ -1,55 +1,38 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Text.Pandoc.Readers.EPUB
-  (readEPUB, testRead)
+  (readEPUB)
   where
 
+import Text.XML.Light 
 import Text.Pandoc.Definition hiding (Attr)
-import Text.Pandoc.Walk 
+import Text.Pandoc.Walk (walk)
 import Text.Pandoc.Readers.HTML (readHtml)
-import Text.Pandoc.Options
+import Text.Pandoc.Options (ReaderOptions(..), readerExtensions, Extension(..) )
 import Text.Pandoc.Shared (escapeURI)
 import qualified Text.Pandoc.Builder as B
-import Codec.Archive.Zip
-import Text.XML.Light
+import Codec.Archive.Zip (Archive (..), toArchive, fromEntry, findEntryByPath) 
 import Data.Maybe(fromJust)
 import qualified Data.ByteString.Lazy as BL
 import System.FilePath
 import qualified Text.Pandoc.UTF8 as UTF8
 import Control.Applicative ((<$>))
 import Control.Monad (guard)
-import Data.Monoid
+import Data.Monoid (mempty, mconcat)
 import Data.List (isPrefixOf)
-import Debug.Trace
-import Data.Maybe
-import qualified Data.Map as M
+import Data.Maybe (mapMaybe)
+import qualified Data.Map as M (Map,  lookup, fromList)
+import qualified Data.Set as S (insert)
 
-testRead :: String -> IO Pandoc
-testRead f = readEPUB def <$> BL.readFile f
+
+type MIME = String
+
+type Items = M.Map String (FilePath, MIME)
+
 
 readEPUB :: ReaderOptions -> BL.ByteString -> Pandoc
 readEPUB opts bytes = fromJust $ archiveToEPUB opts $ toArchive bytes
 
-attrToNSPair :: Attr -> Maybe (String, String)
-attrToNSPair (Attr (QName "xmlns" _ _) val) = Just ("xmlns", val)
-attrToNSPair _ = Nothing
-
-attrToNSPair1 :: Attr -> Maybe (String, String)
-attrToNSPair1 (Attr (QName v Nothing (Just "xmlns")) val) = Just (v, val)
-attrToNSPair1 _ = Nothing
-
-attrToPair :: Attr -> (String, String)
-attrToPair (Attr (QName name _ _) val) = (name, val)
-
-
-defaultNameSpace :: Maybe String
-defaultNameSpace = Just "http://www.idpf.org/2007/opf"
-
-dfName :: String -> QName
-dfName s = QName s defaultNameSpace Nothing
-
-emptyName :: String -> QName
-emptyName s = QName s Nothing Nothing
 
 archiveToEPUB :: ReaderOptions -> Archive -> Maybe Pandoc
 archiveToEPUB os archive = do
@@ -63,20 +46,79 @@ archiveToEPUB os archive = do
       mconcat <$> mapM (parseSpineElem root) spine
   return $ Pandoc meta bs
   where 
+    rs = readerExtensions os
+    os' = os {readerExtensions = S.insert Ext_epub_html_exts rs}
     parseSpineElem r (path, mime) = do
       fname <- findEntryByPath (r </> path) archive
       let doc = mimeToReader mime $ fromEntry fname
       return (fixInternalReferences path doc)
     mimeToReader s = 
-      traceShow s (
       case s of 
-        "application/xhtml+xml" -> readHtml os . UTF8.toStringLazy
+        "application/xhtml+xml" -> readHtml os' . UTF8.toStringLazy
         "image/gif" -> const mempty
         "image/jpeg" -> const mempty
         "image/png" -> const mempty
         _ -> const mempty
 
-    
+parseManifest :: Element -> Maybe Items
+parseManifest content = do
+  manifest <- findElement (dfName "manifest") content
+  let items = findChildren (dfName "item") manifest
+  r <- mapM parseItem items
+  return (M.fromList r)
+
+  where
+    parseItem e = do
+      uid <- findAttr (emptyName "id") e
+      href <- findAttr (emptyName "href") e
+      mime <- findAttr (emptyName "media-type") e
+      return (uid, (href, mime))
+
+parseSpine :: Items -> Element -> Maybe [(FilePath, MIME)]
+parseSpine is e = do
+  spine <- findElement (dfName "spine") e
+  let itemRefs = findChildren (dfName "itemref") spine
+  mapM (flip M.lookup is)  $ mapMaybe parseItemRef itemRefs
+  where
+    parseItemRef ref = do
+      let linear = maybe True (== "yes") (findAttr (emptyName "linear") ref)
+      guard linear
+      findAttr (emptyName "idref") ref
+
+parseMeta :: Element -> Maybe Meta
+parseMeta content = do 
+  meta <- findElement (dfName "metadata") content
+  let dcspace (QName _ (Just "http://purl.org/dc/elements/1.1/") (Just "dc")) = True
+      dcspace _ = False
+  let dcs = filterChildrenName dcspace meta
+  let r = foldr parseMetaItem nullMeta dcs 
+  return r
+
+-- http://www.idpf.org/epub/30/spec/epub30-publications.html#sec-metadata-elem
+parseMetaItem :: Element -> Meta -> Meta
+parseMetaItem e@(stripNamespace . elName -> field) meta = 
+  B.setMeta (renameMeta field) (B.str $ strContent e) meta
+  
+renameMeta :: String -> String
+renameMeta "creator" = "author"
+renameMeta s = s
+
+getManifest :: Archive -> Maybe (String, Element)
+getManifest archive = do
+  metaEntry <- findEntryByPath ("META-INF" </> "container.xml") archive
+  docElem <- (parseXMLDoc . UTF8.toStringLazy . fromEntry) metaEntry
+  let namespaces = mapMaybe attrToNSPair (elAttribs docElem)
+  ns <- lookup "xmlns" namespaces
+  as <- (map attrToPair) . elAttribs <$>
+    findElement (QName "rootfile" (Just ns) Nothing) docElem
+  root <- lookup "full-path" as
+  let rootdir = dropFileName root
+  --mime <- lookup "media-type" as
+  manifest <- findEntryByPath root archive
+  (,) rootdir <$> (parseXMLDoc . UTF8.toStringLazy . fromEntry) manifest
+
+-- Fixup
+
 fixInternalReferences :: String -> Pandoc -> Pandoc
 fixInternalReferences s = 
   (walk $ fixBlockIRs s') . (walk $ fixInlineIRs s')
@@ -106,69 +148,27 @@ fixBlockIRs s (CodeBlock (ident, cs, kvs) code) =
   CodeBlock (s ++ "#" ++ ident, cs, kvs) code
 fixBlockIRs _ b = b
 
-type MIME = String
+-- Utility
 
-type Items = M.Map String (FilePath, MIME)
-
-parseManifest :: Element -> Maybe Items
-parseManifest content = do
-  let namespaces = mapMaybe attrToNSPair1 (elAttribs content)
-  manifest <- findElement (dfName "manifest") content
-  let items = findChildren (dfName "item") manifest
-  r <- mapM parseItem items
-  return (M.fromList r)
-
-  where
-    parseItem e = do
-      uid <- findAttr (emptyName "id") e
-      href <- findAttr (emptyName "href") e
-      mime <- findAttr (emptyName "media-type") e
-      return (uid, (href, mime))
-
-parseSpine :: Items -> Element -> Maybe [(FilePath, MIME)]
-parseSpine is e = do
-  spine <- findElement (dfName "spine") e
-  let itemRefs = findChildren (dfName "itemref") spine
-  mapM (flip M.lookup is)  $ mapMaybe parseItemRef itemRefs
-  where
-    parseItemRef e = do
-      let linear = maybe True (== "yes") (findAttr (emptyName "linear") e)
-      guard linear
-      findAttr (emptyName "idref") e
-
-parseMeta :: Element -> Maybe Meta
-parseMeta content = do 
-  meta <- findElement (dfName "metadata") content
-  let dcspace (QName _ (Just "http://purl.org/dc/elements/1.1/") (Just "dc")) = True
-      dcspace _ = False
-  let dcs = filterChildrenName dcspace meta
-  
-  let r = foldr parseMetaItem nullMeta dcs 
-  traceShowId (return r)
-   
 stripNamespace :: QName -> String
 stripNamespace (QName v _ _) = v
 
-parseMetaItem :: Element -> Meta -> Meta
-parseMetaItem e@(stripNamespace . elName -> field) meta = 
-  B.setMeta (rename field) (B.str $ strContent e) meta
-  
-  
-rename :: String -> String
-rename "creator" = "author"
-rename s = s
+attrToNSPair :: Attr -> Maybe (String, String)
+attrToNSPair (Attr (QName "xmlns" _ _) val) = Just ("xmlns", val)
+attrToNSPair _ = Nothing
 
-getManifest :: Archive -> Maybe (String, Element)
-getManifest archive = do
-  metaEntry <- findEntryByPath ("META-INF" </> "container.xml") archive
-  docElem <- (parseXMLDoc . UTF8.toStringLazy . fromEntry) metaEntry
-  let namespaces = mapMaybe attrToNSPair (elAttribs docElem)
-  ns <- lookup "xmlns" namespaces
-  as <- (map attrToPair) . elAttribs <$>
-    findElement (QName "rootfile" (Just ns) Nothing) docElem
-  root <- lookup "full-path" as
-  let rootdir = dropFileName root
-  mime <- lookup "media-type" as
-  manifest <- findEntryByPath root archive
-  (,) rootdir <$> (parseXMLDoc . UTF8.toStringLazy . fromEntry) manifest
+--attrToNSPair1 :: Attr -> Maybe (String, String)
+--attrToNSPair1 (Attr (QName v Nothing (Just "xmlns")) val) = Just (v, val)
+--attrToNSPair1 _ = Nothing
 
+attrToPair :: Attr -> (String, String)
+attrToPair (Attr (QName name _ _) val) = (name, val)
+
+defaultNameSpace :: Maybe String
+defaultNameSpace = Just "http://www.idpf.org/2007/opf"
+
+dfName :: String -> QName
+dfName s = QName s defaultNameSpace Nothing
+
+emptyName :: String -> QName
+emptyName s = QName s Nothing Nothing
