@@ -1,4 +1,4 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns, BangPatterns, StandaloneDeriving  #-}
 
 module Text.Pandoc.Readers.EPUB
   (readEPUB)
@@ -7,6 +7,7 @@ module Text.Pandoc.Readers.EPUB
 import Text.XML.Light 
 import Text.Pandoc.Definition hiding (Attr)
 import Text.Pandoc.Walk (walk)
+import Text.Pandoc.Generic(bottomUp)
 import Text.Pandoc.Readers.HTML (readHtml)
 import Text.Pandoc.Options (ReaderOptions(..), readerExtensions, Extension(..) )
 import Text.Pandoc.Shared (escapeURI)
@@ -18,21 +19,19 @@ import System.FilePath
 import qualified Text.Pandoc.UTF8 as UTF8
 import Control.Applicative ((<$>))
 import Control.Monad (guard)
-import Data.Monoid (mempty, mconcat)
+import Data.Monoid (mempty, (<>))
 import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
 import qualified Data.Map as M (Map,  lookup, fromList)
 import qualified Data.Set as S (insert)
-
+import Control.DeepSeq.Generics 
 
 type MIME = String
 
 type Items = M.Map String (FilePath, MIME)
 
-
 readEPUB :: ReaderOptions -> BL.ByteString -> Pandoc
 readEPUB opts bytes = fromJust $ archiveToEPUB opts $ toArchive bytes
-
 
 archiveToEPUB :: ReaderOptions -> Archive -> Maybe Pandoc
 archiveToEPUB os archive = do
@@ -42,23 +41,24 @@ archiveToEPUB os archive = do
   spine <- parseSpine items content
   let escapedSpine = map (escapeURI . fst) spine
   Pandoc _ bs <- 
-    walk (prependHash escapedSpine) $ 
-      mconcat <$> mapM (parseSpineElem root) spine
-  return $ Pandoc meta bs
+      foldM' (\a b -> ((a <>) . bottomUp (prependHash escapedSpine)) 
+        <$> parseSpineElem root b) mempty spine
+  return (Pandoc meta bs)
   where 
     rs = readerExtensions os
     os' = os {readerExtensions = S.insert Ext_epub_html_exts rs}
     parseSpineElem r (path, mime) = do
       fname <- findEntryByPath (r </> path) archive
-      let doc = mimeToReader mime $ fromEntry fname
+      let doc = mimeToReader mime fname
       return (fixInternalReferences path doc)
     mimeToReader s = 
       case s of 
-        "application/xhtml+xml" -> readHtml os' . UTF8.toStringLazy
-        "image/gif" -> const mempty
-        "image/jpeg" -> const mempty
-        "image/png" -> const mempty
+        "application/xhtml+xml" -> readHtml os' . UTF8.toStringLazy . fromEntry
+        "image/gif" -> return mempty 
+        "image/jpeg" -> return mempty
+        "image/png" -> return mempty
         _ -> const mempty
+    spineImage = B.doc . B.para . (\x -> B.image x "" mempty)
 
 parseManifest :: Element -> Maybe Items
 parseManifest content = do
@@ -149,6 +149,13 @@ fixBlockIRs s (CodeBlock (ident, cs, kvs) code) =
 fixBlockIRs _ b = b
 
 -- Utility
+
+-- Strict version of foldM
+foldM' :: (Monad m, NFData a) => (a -> b -> m a) -> a -> [b] -> m a
+foldM' _ z [] = return z
+foldM' f z (x:xs) = do
+  z' <- f z x
+  z' `deepseq` foldM' f z' xs
 
 stripNamespace :: QName -> String
 stripNamespace (QName v _ _) = v
