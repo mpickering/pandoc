@@ -57,7 +57,6 @@ import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
 import Text.TeXMath (mathMLToLaTeX, DisplayType(..))
 
 import qualified Text.Pandoc.UTF8 as UTF8
-import Debug.Trace
 import qualified Data.Set as Set
 
 isSpace :: Char -> Bool
@@ -790,11 +789,12 @@ stripPrefix x = x
 stripPrefix' :: String -> String
 stripPrefix' s =
   case span (/= ':') s of
-    (s, "") -> s
+    (_, "") -> s
     (_, (_:ts)) -> ts
 
 -- EPUB Specific
 --
+{-
 groupingContent :: [String]
 groupingContent = ["p", "hr", "pre", "blockquote", "ol"
                   , "ul", "li", "dl", "dt", "dt", "dd"
@@ -810,4 +810,4 @@ types =  -- Document divisions
   ++ -- Document section and components
   [
     ("abstract",  ([], 0))]
-
+-}
