@@ -207,7 +207,11 @@ Extra-Source-Files:
                  tests/docx.tables.docx,
                  tests/docx.tables.native,
                  tests/docx.unicode.docx,
-                 tests/docx.unicode.native
+                 tests/docx.unicode.native,
+                 tests/features.epub,
+                 tests/features.native,
+                 tests/formatting.epub,
+                 tests/formatting.native
 Extra-Tmp-Files: man/man1/pandoc.1,
                  man/man5/pandoc_markdown.5
 
