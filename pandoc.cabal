@@ -261,7 +261,7 @@ Library
                  hslua >= 0.3 && < 0.4,
                  binary >= 0.5 && < 0.8,
                  SHA >= 1.6 && < 1.7,
-                 haddock-library >= 1.1 && < 1.2
+                 haddock-library >= 1.1 && < 1.2,
                  deepseq-generics >= 0.1 && < 0.2
   Build-Tools:   alex, happy
   if flag(https)
