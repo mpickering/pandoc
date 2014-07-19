@@ -228,12 +228,8 @@ readers = [ ("native"       , StringReader $ \_ s -> return $ readNative s)
            ,("html"         , mkStringReader readHtml)
            ,("latex"        , mkStringReader readLaTeX)
            ,("haddock"      , mkStringReader readHaddock)
-<<<<<<< HEAD
            ,("docx"         , mkBSReader readDocx)
-=======
-           ,("docx"         , mkBSReader readDocX)
            ,("epub"         , mkBSReader readEPUB)
->>>>>>> ec09bca... Implementation of EPUB reader.
            ]
 
 data Writer = PureStringWriter   (WriterOptions -> Pandoc -> String)

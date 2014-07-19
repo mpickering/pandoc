@@ -4,7 +4,7 @@ module Text.Pandoc.Readers.EPUB
   (readEPUB)
   where
 
-import Text.XML.Light 
+import Text.XML.Light
 import Text.Pandoc.Definition hiding (Attr)
 import Text.Pandoc.Walk (walk)
 import Text.Pandoc.Generic(bottomUp)
@@ -12,7 +12,7 @@ import Text.Pandoc.Readers.HTML (readHtml)
 import Text.Pandoc.Options (ReaderOptions(..), readerExtensions, Extension(..) )
 import Text.Pandoc.Shared (escapeURI)
 import qualified Text.Pandoc.Builder as B
-import Codec.Archive.Zip (Archive (..), toArchive, fromEntry, findEntryByPath) 
+import Codec.Archive.Zip (Archive (..), toArchive, fromEntry, findEntryByPath)
 import Data.Maybe(fromJust)
 import qualified Data.ByteString.Lazy as BL
 import System.FilePath
@@ -24,7 +24,7 @@ import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
 import qualified Data.Map as M (Map,  lookup, fromList)
 import qualified Data.Set as S (insert)
-import Control.DeepSeq.Generics 
+import Control.DeepSeq.Generics
 
 type MIME = String
 
@@ -40,25 +40,27 @@ archiveToEPUB os archive = do
   items <- parseManifest content
   spine <- parseSpine items content
   let escapedSpine = map (escapeURI . fst) spine
-  Pandoc _ bs <- 
-      foldM' (\a b -> ((a <>) . bottomUp (prependHash escapedSpine)) 
+  Pandoc _ bs <-
+      foldM' (\a b -> ((a <>) . bottomUp (prependHash escapedSpine))
         <$> parseSpineElem root b) mempty spine
   return (Pandoc meta bs)
-  where 
+  where
     rs = readerExtensions os
-    os' = os {readerExtensions = S.insert Ext_epub_html_exts rs}
+    os' = os {readerExtensions = foldr S.insert rs [Ext_epub_html_exts, Ext_raw_html]}
+    os'' = os' {readerParseRaw = True}
     parseSpineElem r (path, mime) = do
-      fname <- findEntryByPath (r </> path) archive
-      let doc = mimeToReader mime fname
-      return (fixInternalReferences path doc)
-    mimeToReader s = 
-      case s of 
-        "application/xhtml+xml" -> readHtml os' . UTF8.toStringLazy . fromEntry
-        "image/gif" -> return mempty 
-        "image/jpeg" -> return mempty
-        "image/png" -> return mempty
-        _ -> const mempty
-    spineImage = B.doc . B.para . (\x -> B.image x "" mempty)
+      doc <- mimeToReader mime (r </> path)
+      return $ fixInternalReferences path doc
+    mimeToReader :: MIME -> FilePath -> Maybe Pandoc
+    mimeToReader "application/xhtml+xml" path = do
+      fname <- findEntryByPath path archive
+      return $ readHtml os'' . UTF8.toStringLazy $ fromEntry fname
+    mimeToReader s path
+      | s `elem` imageMimes = return $ (B.doc . B.para)  (B.image path "" mempty)
+      | otherwise = return $ mempty
+
+imageMimes :: [String]
+imageMimes = ["image/gif", "image/jpeg", "image/png"]
 
 parseManifest :: Element -> Maybe Items
 parseManifest content = do
@@ -86,19 +88,19 @@ parseSpine is e = do
       findAttr (emptyName "idref") ref
 
 parseMeta :: Element -> Maybe Meta
-parseMeta content = do 
+parseMeta content = do
   meta <- findElement (dfName "metadata") content
   let dcspace (QName _ (Just "http://purl.org/dc/elements/1.1/") (Just "dc")) = True
       dcspace _ = False
   let dcs = filterChildrenName dcspace meta
-  let r = foldr parseMetaItem nullMeta dcs 
+  let r = foldr parseMetaItem nullMeta dcs
   return r
 
 -- http://www.idpf.org/epub/30/spec/epub30-publications.html#sec-metadata-elem
 parseMetaItem :: Element -> Meta -> Meta
-parseMetaItem e@(stripNamespace . elName -> field) meta = 
+parseMetaItem e@(stripNamespace . elName -> field) meta =
   B.setMeta (renameMeta field) (B.str $ strContent e) meta
-  
+
 renameMeta :: String -> String
 renameMeta "creator" = "author"
 renameMeta s = s
@@ -120,33 +122,51 @@ getManifest archive = do
 -- Fixup
 
 fixInternalReferences :: String -> Pandoc -> Pandoc
-fixInternalReferences s = 
-  (walk $ fixBlockIRs s') . (walk $ fixInlineIRs s')
-  where 
+fixInternalReferences s =
+  (walk $ stripImage) . (walk $ fixBlockIRs s') . (walk $ fixInlineIRs s')
+  where
     s' = escapeURI s
-  
+
 fixInlineIRs :: String -> Inline -> Inline
 fixInlineIRs s (Span (ident, cs, kvs) v ) =
-  Span (s ++ "#" ++ ident, cs, kvs) v
-fixInlineIRs s (Code (ident, cs, kvs) code) = 
-  Code (s ++ "#" ++ ident, cs, kvs) code
+  Span (addHash s ident, filter (not . null) cs, removeEPUBAttrs kvs) v
+fixInlineIRs s (Code (ident, cs, kvs) code) =
+  Code (addHash s ident, filter (not . null) cs, removeEPUBAttrs kvs) code
+fixInlineIRs s (Link t ('#':url, tit)) =
+  Link t (addHash s url, tit)
 fixInlineIRs _ v = v
+
+addHash :: String -> String -> String
+addHash _ "" = ""
+addHash s ident = s ++ "#" ++ ident
+
+removeEPUBAttrs :: [(String, String)] -> [(String, String)]
+removeEPUBAttrs kvs = filter (not . isEPUBAttr) kvs
+
+isEPUBAttr :: (String, String) -> Bool
+isEPUBAttr (k, _) = "epub:" `isPrefixOf` k
 
 prependHash :: [String] -> Inline -> Inline
 prependHash ps l@(Link is (url, tit))
-  | or [s `isPrefixOf` url | s <- ps] = 
+  | or [s `isPrefixOf` url | s <- ps] =
     Link is ('#':url, tit)
   | otherwise = l
 prependHash _ i = i
 
 fixBlockIRs :: String -> Block -> Block
 fixBlockIRs s (Div (ident, cs, kvs) b) =
-  Div ( s ++ "#" ++ ident , cs, kvs) b
-fixBlockIRs s (Header i (ident, cs, kvs) b) = 
-  Header i (s ++ "#" ++ ident, cs, kvs) b 
-fixBlockIRs s (CodeBlock (ident, cs, kvs) code) = 
-  CodeBlock (s ++ "#" ++ ident, cs, kvs) code
+  Div (addHash s ident , filter (not . null) cs, removeEPUBAttrs kvs) b
+fixBlockIRs s (Header i (ident, cs, kvs) b) =
+  Header i (addHash s ident, filter (not . null) cs, removeEPUBAttrs kvs) b
+fixBlockIRs s (CodeBlock (ident, cs, kvs) code) =
+  CodeBlock (addHash s ident, filter (not . null) cs, removeEPUBAttrs kvs) code
 fixBlockIRs _ b = b
+
+-- Remove relative paths
+stripImage :: Inline -> Inline
+stripImage (Image alt (url, tit)) = Image alt (takeFileName url, tit)
+stripImage i = i
+
 
 -- Utility
 

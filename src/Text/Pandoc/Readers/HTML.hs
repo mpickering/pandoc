@@ -34,7 +34,6 @@ module Text.Pandoc.Readers.HTML ( readHtml
                                 , isBlockTag
                                 , isTextTag
                                 , isCommentTag
-                                , testRead
                                 ) where
 
 import Text.HTML.TagSoup
@@ -53,11 +52,7 @@ import Control.Applicative ( (<$>), (<$), (<*), (*>) )
 import Data.Monoid
 import Text.Printf (printf)
 import Debug.Trace (trace)
-import Data.Sequence (ViewL(..), ViewR(..), viewr, viewl)
 import Text.TeXMath (mathMLToLaTeX, DisplayType(..))
-
-import qualified Text.Pandoc.UTF8 as UTF8
-import qualified Data.Set as Set
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -127,13 +122,6 @@ block = do
 namespaces :: [(String, TagParser Blocks)]
 namespaces = [("http://www.w3.org/1998/Math/MathML", B.para <$> pMath)]
 
-testRead :: String -> IO Pandoc
-testRead s = readHtml ds {readerParseRaw = True} <$> UTF8.readFile s
-  where
-    rs = readerExtensions def
-    ds = def {readerExtensions = foldr (Set.insert) rs [Ext_raw_html, Ext_epub_html_exts] }
-
-
 eSwitch :: TagParser Blocks
 eSwitch = try $ do
   guardEnabled Ext_epub_html_exts
@@ -142,17 +130,15 @@ eSwitch = try $ do
             manyTill (First <$> (eCase <* skipMany pBlank) )
               (lookAhead $ try $ pSatisfy (~== TagOpen "default" []))
   skipMany pBlank
-  fallback <- pInTags "default" (skipMany pBlank >> block >>~ skipMany pBlank)
+  fallback <- pInTags "default" (skipMany pBlank *> block <* skipMany pBlank)
   skipMany pBlank
   pSatisfy (~== TagClose "switch")
   return (fromMaybe fallback cases)
-
 
 eCase :: TagParser (Maybe Blocks)
 eCase = try $ do
   skipMany pBlank
   TagOpen _ attr <- lookAhead $ pSatisfy $ (~== TagOpen "case" [])
-  let b = (flip lookup namespaces) =<< lookup "required-namespace" attr
   case (flip lookup namespaces) =<< lookup "required-namespace" attr of
     Just p -> Just <$> (pInTags "case" (skipMany pBlank *> p <* skipMany pBlank))
     Nothing -> Nothing <$ manyTill pAnyTag (pSatisfy (~== TagClose "case"))
@@ -775,7 +761,7 @@ mkAttr attr = (attribsId, attribsClasses, attribsKV)
   where attribsId = fromMaybe "" $ lookup "id" attr
         attribsClasses = (words $ fromMaybe "" $ lookup "class" attr) ++ epubTypes
         attribsKV = filter (\(k,_) -> k /= "class" && k /= "id") attr
-        epubTypes = [fromMaybe "" $ lookup "epub:type" attr]
+        epubTypes = words $ fromMaybe "" $ lookup "epub:type" attr
 
 -- Strip namespace prefixes
 stripPrefixes :: [Tag String] -> [Tag String]
