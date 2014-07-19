@@ -876,6 +876,7 @@ defaultReaderName fallback (x:xs) =
     ".native"   -> "native"
     ".json"     -> "json"
     ".docx"     -> "docx"
+    ".epub"     -> "epub"
     _           -> defaultReaderName fallback xs
 
 -- Returns True if extension of first source is .lhs
@@ -1188,11 +1189,11 @@ main = do
                            else return
 
   doc <- case reader of
-          StringReader r-> 
+          StringReader r->
             readSources sources >>=
               handleIncludes' . convertTabs . intercalate "\n" >>=
               r readerOpts
-          ByteStringReader r -> readFiles sources >>= r readerOpts 
+          ByteStringReader r -> readFiles sources >>= r readerOpts
 
 
   let doc0 = M.foldWithKey setMeta doc metadata
