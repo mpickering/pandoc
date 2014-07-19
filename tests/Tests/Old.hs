@@ -142,6 +142,12 @@ tests = [ testGroup "markdown"
           , test "reader" ["-r", "haddock", "-w", "native", "-s"]
             "haddock-reader.haddock" "haddock-reader.native"
           ]
+        , testGroup "epub" [
+            test "features" ["-r", "epub", "-w", "native"]
+              "features.epub" "features.native"
+          , test "formatting" ["-r", "epub", "-w", "native"]
+              "formatting.epub" "formatting.native"
+          ]
         , testGroup "other writers" $ map (\f -> testGroup f $ writerTests f)
           [ "opendocument" , "context" , "texinfo", "icml"
           , "man" , "plain" , "rtf", "org", "asciidoc"
