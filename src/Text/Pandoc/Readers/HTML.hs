@@ -48,10 +48,11 @@ import Data.Maybe ( fromMaybe, isJust )
 import Data.List ( intercalate )
 import Data.Char ( isDigit )
 import Control.Monad ( liftM, guard, when, mzero )
-import Control.Applicative ( (<$>), (<$), (<*) )
+import Control.Applicative ( (<$>), (<$), (<*), (*>) )
 import Data.Monoid
 import Text.Printf (printf)
 import Debug.Trace (trace)
+import Text.TeXMath (mathMLToLaTeX, DisplayType(..))
 
 isSpace :: Char -> Bool
 isSpace ' '  = True
@@ -67,12 +68,13 @@ readHtml opts inp =
   case runParser parseDoc def{ stateOptions = opts } "source" tags of
           Left err'    -> error $ "\nError at " ++ show  err'
           Right result -> result
-    where tags = canonicalizeTags $
+    where tags = stripPrefixes . canonicalizeTags $
                    parseTagsOptions parseOptions{ optTagPosition = True } inp
           parseDoc = do
              blocks <- (fixPlains False) . mconcat <$> manyTill block eof
              meta <- stateMeta <$> getState
              return $ Pandoc meta (B.toList blocks)
+
 
 type TagParser = Parser [Tag String] ParserState
 
@@ -98,7 +100,8 @@ block = do
   tr <- getOption readerTrace
   pos <- getPosition
   res <- choice
-            [ pPara
+            [ eSwitch
+            , pPara
             , pHeader
             , pBlockQuote
             , pCodeBlock
@@ -115,6 +118,30 @@ block = do
              (take 60 $ show $ B.toList res)) (return ())
   return res
 
+
+namespaces :: [(String, TagParser Blocks)]
+namespaces = [("http://www.w3.org/1998/Math/MathML", B.para <$> pMath)]
+
+eSwitch :: TagParser Blocks
+eSwitch = try $ do
+  guardEnabled Ext_epub_html_exts
+  pSatisfy (~== TagOpen "switch" [])
+  cases <- getFirst . mconcat <$>
+            manyTill (First <$> (eCase <* skipMany pBlank) )
+              (lookAhead $ try $ pSatisfy (~== TagOpen "default" []))
+  skipMany pBlank
+  fallback <- pInTags "default" (skipMany pBlank *> block <* skipMany pBlank)
+  skipMany pBlank
+  pSatisfy (~== TagClose "switch")
+  return (fromMaybe fallback cases)
+
+eCase :: TagParser (Maybe Blocks)
+eCase = try $ do
+  skipMany pBlank
+  TagOpen _ attr <- lookAhead $ pSatisfy $ (~== TagOpen "case" [])
+  case (flip lookup namespaces) =<< lookup "required-namespace" attr of
+    Just p -> Just <$> (pInTags "case" (skipMany pBlank *> p <* skipMany pBlank))
+    Nothing -> Nothing <$ manyTill pAnyTag (pSatisfy (~== TagClose "case"))
 
 pList :: TagParser Blocks
 pList = pBulletList <|> pOrderedList <|> pDefinitionList
@@ -338,6 +365,7 @@ inline = choice
            , pImage
            , pCode
            , pSpan
+           , pMath
            , pRawHtmlInline
            ]
 
@@ -406,12 +434,24 @@ pLineBreak = do
   return B.linebreak
 
 pLink :: TagParser Inlines
-pLink = try $ do
+pLink = pRelLink <|> pAnchor
+
+pAnchor :: TagParser Inlines
+pAnchor = try $ do
+  tag <- pSatisfy (tagOpenLit "a" (isJust . lookup "id"))
+  return $ B.spanWith (fromAttrib "id" tag , [], []) mempty
+
+pRelLink :: TagParser Inlines
+pRelLink = try $ do
   tag <- pSatisfy (tagOpenLit "a" (isJust . lookup "href"))
   let url = fromAttrib "href" tag
   let title = fromAttrib "title" tag
+  let uid = fromAttrib "id" tag
+  let spanC = case uid of
+              [] -> id
+              s  -> B.spanWith (s, [], [])
   lab <- trimInlines . mconcat <$> manyTill inline (pCloses "a")
-  return $ B.link (escapeURI url) title lab
+  return $ spanC $ B.link (escapeURI url) title lab
 
 pImage :: TagParser Inlines
 pImage = do
@@ -441,6 +481,17 @@ pRawHtmlInline = do
   if parseRaw
      then return $ B.rawInline "html" $ renderTags' [result]
      else return mempty
+
+pMath :: TagParser Inlines
+pMath = do
+  open@(TagOpen _ attr) <- pSatisfy $ tagOpen (=="math") (const True)
+  let displayType =
+        maybe DisplayInline (\x -> if (x == "inline") then DisplayInline else DisplayBlock)
+          (lookup "display" attr)
+  contents <- manyTill pAnyTag (pSatisfy (~== TagClose "math"))
+  let math = mathMLToLaTeX displayType $
+              (renderTags $ [open] ++ contents ++ [TagClose "math"])
+  return $ either (const mempty) B.singleton math
 
 pInlinesInTags :: String -> (Inlines -> Inlines)
                -> TagParser Inlines
@@ -609,8 +660,11 @@ blockDocBookTags = ["calloutlist", "bibliolist", "glosslist", "itemizedlist",
                     "classsynopsis", "blockquote", "epigraph", "msgset",
                     "sidebar", "title"]
 
+epubTags :: [String]
+epubTags = ["case", "switch"]
+
 blockTags :: [String]
-blockTags = blockHtmlTags ++ blockDocBookTags
+blockTags = blockHtmlTags ++ blockDocBookTags ++ epubTags
 
 isInlineTag :: Tag String -> Bool
 isInlineTag t = tagOpen isInlineTagName (const True) t ||
@@ -705,7 +759,41 @@ htmlTag f = try $ do
 mkAttr :: [(String, String)] -> Attr
 mkAttr attr = (attribsId, attribsClasses, attribsKV)
   where attribsId = fromMaybe "" $ lookup "id" attr
-        attribsClasses = words $ fromMaybe "" $ lookup "class" attr
+        attribsClasses = (words $ fromMaybe "" $ lookup "class" attr) ++ epubTypes
         attribsKV = filter (\(k,_) -> k /= "class" && k /= "id") attr
+        epubTypes = words $ fromMaybe "" $ lookup "epub:type" attr
 
+-- Strip namespace prefixes
+stripPrefixes :: [Tag String] -> [Tag String]
+stripPrefixes = map stripPrefix
 
+stripPrefix :: Tag String -> Tag String
+stripPrefix (TagOpen s as) = TagOpen (stripPrefix' s) as
+stripPrefix (TagClose s) = TagClose (stripPrefix' s)
+stripPrefix x = x
+
+stripPrefix' :: String -> String
+stripPrefix' s =
+  case span (/= ':') s of
+    (_, "") -> s
+    (_, (_:ts)) -> ts
+
+-- EPUB Specific
+--
+{-
+groupingContent :: [String]
+groupingContent = ["p", "hr", "pre", "blockquote", "ol"
+                  , "ul", "li", "dl", "dt", "dt", "dd"
+                  , "figure", "figcaption", "div", "main"]
+
+sectioningContent :: [String]
+sectioningContent = ["article", "aside", "nav", "section"]
+
+types :: [(String, ([String], Int))]
+types =  -- Document divisions
+   map (\s -> (s, (["section", "body"], 0)))
+    ["volume", "part", "chapter", "division"]
+  ++ -- Document section and components
+  [
+    ("abstract",  ([], 0))]
+-}
