@@ -1,6 +1,9 @@
 {-# LANGUAGE ViewPatterns #-}
 
-module Text.Pandoc.Readers.Txt2Tags (readTxt2Tags) where
+module Text.Pandoc.Readers.Txt2Tags ( readTxt2Tags
+                                    , getT2TMeta
+                                    , readTxt2TagsNoMacros)
+                                    where
 
 import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.Builder ( Inlines, Blocks, (<>)
@@ -8,7 +11,7 @@ import Text.Pandoc.Builder ( Inlines, Blocks, (<>)
 import Text.Pandoc.Definition
 import Text.Pandoc.Options
 import Text.Pandoc.Shared (escapeURI,compactify', compactify'DL)
-import Text.Pandoc.Parsing hiding (space, spaces, uri)
+import Text.Pandoc.Parsing hiding (space, spaces, uri, macro)
 import Control.Applicative ((<$>), (<$), (<*>), (<*), (*>))
 import Data.Char (toLower)
 import Data.List (transpose, intersperse, intercalate)
@@ -16,8 +19,14 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid (Monoid, mconcat, mempty, mappend)
 --import Network.URI (isURI) -- Not sure whether to use this function
 import Control.Monad (void, guard, mzero, when)
+import Data.Default
+import Control.Monad.Reader (Reader, runReader, asks)
 
-type T2T = Parser String ParserState 
+import Data.Time.LocalTime
+import System.Directory
+import Data.Time.Format
+import System.Locale
+import System.IO.Error
 
 readTxt2Tags :: ReaderOptions -> String -> Pandoc
 readTxt2Tags opts s = readWith parseT2T (def {stateOptions = opts}) (s ++ "\n\n")
@@ -249,6 +258,7 @@ blockMarkupLine p f s = try (f <$> (string s *> p))
 comment :: Monoid a => T2T a
 comment = try $ do
   atStart
+  notFollowedBy macro
   mempty <$ (char '%' *> anyLine)
 
 -- Inline
@@ -258,8 +268,9 @@ parseInlines = trimInlines . mconcat <$> many1 inline
 
 inline :: T2T Inlines
 inline = do
-  choice 
-    [ endline  
+  choice
+    [ endline
+    , macro
     , commentLine
     , whitespace
     , url
