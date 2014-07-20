@@ -105,7 +105,10 @@ module Text.Pandoc.Parsing ( anyLine,
                              runF,
                              askF,
                              asksF,
+                             generalize,
                              -- * Re-exports from Text.Pandoc.Parsec
+                             Stream,
+                             runParserT,
                              runParser,
                              parse,
                              anyToken,
@@ -1196,3 +1199,7 @@ applyMacros' target = do
      then do macros <- extractMacros <$> getState
              return $ applyMacros macros target
      else return target
+
+
+generalize :: (Monad m) => Parser s st a -> ParserT s st m a
+generalize m = mkPT (\ s -> (return $ (return . runIdentity) <$> runIdentity (runParsecT m s)))
