@@ -28,12 +28,38 @@ import Data.Time.Format
 import System.Locale
 import System.IO.Error
 
-readTxt2Tags :: ReaderOptions -> String -> Pandoc
-readTxt2Tags opts s = readWith parseT2T (def {stateOptions = opts}) (s ++ "\n\n")
+import Debug.Trace
+
+type T2T = ParserT String ParserState (Reader T2TMeta)
+
+data T2TMeta = T2TMeta {
+                 date :: String
+               , mtime :: String
+               , infile :: FilePath
+               , outfile :: FilePath
+               } deriving Show
+
+instance Default T2TMeta where
+    def = T2TMeta "" "" "" ""
+
+getT2TMeta :: FilePath -> FilePath -> IO T2TMeta
+getT2TMeta inp out = do
+    curDate <- formatTime defaultTimeLocale "%F" <$> getZonedTime
+    let getModTime = formatTime defaultTimeLocale "%F"
+                      <$> getModificationTime inp
+    curMtime <- catchIOError getModTime (const (return ""))
+
+    return $ T2TMeta curDate curMtime inp out
+
+readTxt2Tags :: T2TMeta -> ReaderOptions -> String -> Pandoc
+readTxt2Tags t opts s = flip runReader t $ readWithM parseT2T (def {stateOptions = opts}) (s ++ "\n\n")
+
+readTxt2TagsNoMacros :: ReaderOptions -> String -> Pandoc
+readTxt2TagsNoMacros = readTxt2Tags def
 
 parseT2T :: T2T Pandoc
 parseT2T = do
-  _ <- (Nothing <$ blankline) <|> (Just <$> (count 3 anyLine))
+  _ <- (Nothing <$ try blankline) <|> (Just <$> (count 3 anyLine))
   config <- manyTill setting (notFollowedBy setting)
   let settings = foldr (\(k,v) -> B.setMeta k (MetaString v)) nullMeta config
   updateState (\s -> s {stateMeta = settings})
@@ -58,9 +84,9 @@ parseBlocks = mconcat <$> manyTill block eof
 
 block :: T2T Blocks
 block = do
-  choice 
+  choice
     [ mempty <$ blanklines
-    , quote  
+    , quote
     , hrule -- hrule must go above title
     , title
     , commentBlock
@@ -70,7 +96,7 @@ block = do
     , list
     , table
     , para
-    ] 
+    ]
 
 title :: T2T Blocks
 title = try $ balancedTitle '+' <|> balancedTitle '='
@@ -78,7 +104,7 @@ title = try $ balancedTitle '+' <|> balancedTitle '='
 balancedTitle :: Char -> T2T Blocks
 balancedTitle c = try $ do
   spaces
-  level <- length <$> many1 (char c) 
+  level <- length <$> many1 (char c)
   guard (level <= 5) -- Max header level 5
   heading <- manyTill (noneOf "\n\r") (count level (char c))
   label <- optionMaybe (enclosed (char '[') (char ']') (alphaNum <|> oneOf "_-"))
@@ -89,23 +115,23 @@ balancedTitle c = try $ do
 para :: T2T Blocks
 para = try (B.para <$> parseInlines)
 
-commentBlock :: T2T Blocks 
+commentBlock :: T2T Blocks
 commentBlock = try (blockMarkupArea (anyLine) (const mempty) "%%%") <|> comment
 
 -- Seperator and Strong line treated the same
-hrule :: T2T Blocks 
+hrule :: T2T Blocks
 hrule = try $ do
-  spaces 
-  line <- many1 (oneOf "=-_") 
+  spaces
+  line <- many1 (oneOf "=-_")
   guard (length line >= 20)
-  B.horizontalRule <$ blankline 
-  
+  B.horizontalRule <$ blankline
+
 quote :: T2T Blocks
 quote = try $ do
   lookAhead tab
   rawQuote <-  many1 (tab *> optional spaces *> anyLine)
   contents <- parseFromString parseBlocks (intercalate "\n" rawQuote ++ "\n\n")
-  return $ B.blockQuote contents 
+  return $ B.blockQuote contents
 
 commentLine :: T2T Inlines
 commentLine = comment
@@ -116,20 +142,20 @@ list :: T2T Blocks
 list = choice [bulletList, orderedList, definitionList]
 
 bulletList :: T2T Blocks
-bulletList = B.bulletList . compactify'  
+bulletList = B.bulletList . compactify'
              <$> many1 (listItem bulletListStart)
 
 orderedList :: T2T Blocks
-orderedList = B.orderedList . compactify' 
+orderedList = B.orderedList . compactify'
               <$> many1 (listItem orderedListStart)
 
 definitionList :: T2T Blocks
 definitionList = do
-  listItems <- many1 (listItem definitionListStart)  
+  listItems <- many1 (listItem definitionListStart)
   B.definitionList . compactify'DL <$> mapM toDefinitionList listItems
 
-toDefinitionList :: Blocks -> T2T (Inlines, [Blocks]) 
-toDefinitionList (B.toList -> (Para is :bs)) = 
+toDefinitionList :: Blocks -> T2T (Inlines, [Blocks])
+toDefinitionList (B.toList -> (Para is :bs)) =
   return (B.fromList is, [B.fromList bs])
 toDefinitionList _ = mzero
 
@@ -139,7 +165,7 @@ genericListStart listMarker = try $
   (2+) <$> (length <$> many spaceChar
             <* listMarker <* space <* notFollowedBy space)
 
--- parses bullet list start and returns its length (excl. following whitespace)
+-- parses bullet list \start and returns its length (excl. following whitespace)
 bulletListStart :: T2T  Int
 bulletListStart = genericListStart (char '-')
 
@@ -186,19 +212,19 @@ table = try $ do
   let aligns = map (foldr findAlign AlignDefault) (map (map fst) columns)
   let rows' = map (map snd) rows
   let rowsPadded = map (pad (maximum (map length rows'))) rows'
-  return $ B.table mempty 
-                    (zip aligns (replicate ncolumns (1.0 / fromIntegral ncolumns))) 
+  return $ B.table mempty
+                    (zip aligns (replicate ncolumns (1.0 / fromIntegral ncolumns)))
                       header rowsPadded
 
 pad :: Monoid a => Int -> [a] -> [a]
 pad n xs = xs ++ (replicate (length xs - n) mempty)
 
-findAlign :: Alignment -> Alignment -> Alignment 
+findAlign :: Alignment -> Alignment -> Alignment
 findAlign AlignDefault _ = AlignDefault
 findAlign x AlignDefault = x
-findAlign x y 
+findAlign x y
   | x == y = x
-  | otherwise = AlignDefault 
+  | otherwise = AlignDefault
 
 headerRow :: T2T [(Alignment, Blocks)]
 headerRow = genericRow (string "||")
@@ -207,17 +233,17 @@ tableRow :: T2T [(Alignment, Blocks)]
 tableRow = genericRow (char '|')
 
 genericRow :: T2T a -> T2T [(Alignment, Blocks)]
-genericRow start = try $ do 
+genericRow start = try $ do
   spaces *> start
   manyTill tableCell newline <?> "genericRow"
- 
+
 
 tableCell :: T2T (Alignment, Blocks)
 tableCell = try $ do
   leftSpaces <- length <$> many1 space
   content <- (many1Till inline (try $ lookAhead (void newline <|> (many1 space *> endOfCell))))
-  rightSpaces <- length <$> many space 
-  let align = 
+  rightSpaces <- length <$> many space
+  let align =
         case compare leftSpaces rightSpaces of
               LT -> AlignLeft
               EQ -> AlignCenter
@@ -225,18 +251,18 @@ tableCell = try $ do
   endOfCell
   return $ (align, B.para (mconcat content))
 
-endOfCell :: T2T () 
+endOfCell :: T2T ()
 endOfCell = try (skipMany1 $ char '|') <|> ( () <$ lookAhead newline)
 
 -- Raw area
 
-verbatim :: T2T Blocks 
+verbatim :: T2T Blocks
 verbatim = genericBlock anyLine B.codeBlock "```"
 
 rawBlock :: T2T Blocks
 rawBlock = genericBlock anyLine (B.para . B.str) "\"\"\""
 
-taggedBlock :: T2T Blocks 
+taggedBlock :: T2T Blocks
 taggedBlock = do
   target <- getTarget
   genericBlock anyLine (B.rawBlock target) "'''"
@@ -244,7 +270,7 @@ taggedBlock = do
 -- Generic
 
 genericBlock :: Monoid a => T2T a -> (a -> Blocks) -> String -> T2T Blocks
-genericBlock p f s = blockMarkupArea p f s <|> blockMarkupLine p f s 
+genericBlock p f s = blockMarkupArea p f s <|> blockMarkupLine p f s
 
 blockMarkupArea :: Monoid a => (T2T a) -> (a -> Blocks) -> String -> T2T Blocks
 blockMarkupArea p f s = try $ (do
@@ -317,7 +343,7 @@ tagged = do
 -- Greedy meaning ***a*** = Bold [Str "*a*"]
 -- Glued meaning that markup must be tight to content
 -- Markup can't pass newlines
-inlineMarkup :: Monoid a 
+inlineMarkup :: Monoid a
              => (T2T a) -- Content parser
              -> (a -> Inlines) -- Constructor
              -> Char -- Fence
@@ -328,25 +354,24 @@ inlineMarkup p f c special = try $ do
   let l = length start
   guard (l >= 2)
   when (l == 2) (void $ notFollowedBy space)
-  -- We must make sure that there is no space before the start of the 
+  -- We must make sure that there is no space before the start of the
   -- closing tags
-  body <-  optionMaybe (try $ manyTill (noneOf "\n\r") $ 
+  body <-  optionMaybe (try $ manyTill (noneOf "\n\r") $
                 (try $ lookAhead (noneOf " " >> string [c,c] )))
   case body of
     Just middle -> do
-      lastChar <- anyChar 
+      lastChar <- anyChar
       end <- many1 (char c)
-      s <- getState
-      let parser inp = runParser (mconcat <$> many p) s "" inp 
+      let parser inp = parseFromString (mconcat <$> many p) inp
       let start' = special (drop 2 start)
-      let Right body' = parser (middle ++ [lastChar])
+      body' <- parser (middle ++ [lastChar])
       let end' = special (drop 2 end)
       return $ f (start' <> body' <> end')
     Nothing -> do -- Either bad or case such as *****
-      guard (l >= 5)  
+      guard (l >= 5)
       let body' = (replicate (l - 4) c)
       return $ f (special body')
-      
+
 link :: T2T Inlines
 link = try imageLink <|> titleLink
 
@@ -358,33 +383,43 @@ titleLink = try $ do
   tokens <- sepBy1 (many $ noneOf " ]") space
   guard (length tokens >= 2)
   char ']'
-  let l = last tokens 
+  let l = last tokens
   guard (length l > 0)
   let tit = concat (intersperse " " (init tokens))
   return $ B.link l tit mempty
 
 -- Link with image
 imageLink :: T2T Inlines
-imageLink = try $ do 
+imageLink = try $ do
   char '['
   body <- image
   many1 space
   l <- manyTill (noneOf "\n\r ") (char ']')
   return (B.link l "" body)
 
+macro :: T2T Inlines
+macro = try $ do
+  name <- string "%%" *> oneOfStringsCI (map fst commands)
+  optional (enclosed (char '(') (char ')') anyChar)
+  lookAhead (specialChar <|> newline)
+  maybe (return mempty) (\f -> B.str <$> asks f) (lookup name commands)
+  where
+    commands = [ ("date", date), ("mtime", mtime)
+               , ("infile", infile), ("outfile", outfile)]
+
 -- raw URLs in text are automatically linked
 url :: T2T Inlines
 url = try $ do
   (rawUrl, escapedUrl) <- (try uri <|> emailAddress)
   return $ B.link rawUrl escapedUrl mempty
-  
+
 uri :: T2T (String, String)
 uri = try $ do
-  address <- t2tURI 
+  address <- t2tURI
   return (address, escapeURI address)
 
--- The definition of a URI in the T2T source differs from the 
--- actual definition. This is a transcription of the definition in 
+-- The definition of a URI in the T2T source differs from the
+-- actual definition. This is a transcription of the definition in
 -- the source of v2.6
 --isT2TURI :: String -> Bool
 --isT2TURI (parse t2tURI "" -> Right _) = True
@@ -398,10 +433,10 @@ t2tURI = do
   form' <- option mempty ((:) <$> char '?' <*> many1 form)
   anchor' <- option mempty ((:) <$> char '#' <*> many anchor)
   return (start ++ domain ++ sep ++ form' ++ anchor')
-  where 
+  where
     protos = ["http", "https", "ftp", "telnet", "gopher", "wais"]
-    proto = (++) <$> oneOfStrings protos <*> string "://" 
-    guess = (++) <$> (((++) <$> stringAnyCase "www" <*> option mempty ((:[]) <$> oneOf "23")) 
+    proto = (++) <$> oneOfStrings protos <*> string "://"
+    guess = (++) <$> (((++) <$> stringAnyCase "www" <*> option mempty ((:[]) <$> oneOf "23"))
               <|> stringAnyCase "ftp") <*> ((:[]) <$> char '.')
     login = alphaNum <|> oneOf "_.-"
     pass = many (noneOf " @")
@@ -409,7 +444,7 @@ t2tURI = do
     anchor = alphaNum <|> oneOf "%._0"
     form = chars <|> oneOf ";*"
     urlLogin = option mempty $ try ((\x y z -> x ++ y ++ [z]) <$> many1 login <*> option mempty ((:) <$> char ':' <*> pass) <*> char '@')
-    
+
 
 image :: T2T Inlines
 image =  try $ do
@@ -419,7 +454,7 @@ image =  try $ do
   path <- manyTill (noneOf "\n\t\r ") (try $ lookAhead (oneOfStrings extensions))
   ext <- oneOfStrings extensions
   char ']'
-  return $ B.image (path ++ ext) "" mempty 
+  return $ B.image (path ++ ext) "" mempty
 
 -- Characters used in markup
 specialChars :: String
@@ -436,8 +471,8 @@ spaces = many space
 
 endline :: T2T Inlines
 endline = try $ do
-  newline 
-  notFollowedBy blankline 
+  newline
+  notFollowedBy blankline
   notFollowedBy hrule
   notFollowedBy title
   notFollowedBy commentBlock
@@ -449,21 +484,21 @@ endline = try $ do
   notFollowedBy table
   return $ B.space
 
-str :: T2T Inlines 
+str :: T2T Inlines
 str = try $ do
   B.str <$> many1 (noneOf $ specialChars ++ "\n\r ")
 
-whitespace :: T2T Inlines 
+whitespace :: T2T Inlines
 whitespace = try $ B.space <$ spaceChar
 
 symbol :: T2T Inlines
-symbol = B.str . (:[]) <$> oneOf specialChars 
+symbol = B.str . (:[]) <$> oneOf specialChars
 
 -- Utility
 
 getTarget :: T2T String
 getTarget = do
-  mv <- lookupMeta "target" . stateMeta <$> getState 
+  mv <- lookupMeta "target" . stateMeta <$> getState
   let MetaString target = fromMaybe (MetaString "html") mv
   return target
 
