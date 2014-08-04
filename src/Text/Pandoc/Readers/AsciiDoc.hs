@@ -80,7 +80,20 @@ block :: AsciiDoc Blocks
 block = undefined
 
 title :: AsciiDoc Blocks
-title = undefined
+title = twoLineTitle <|> oneLineTitle
+
+twoLineTitle :: AsciiDoc Blocks
+twoLineTitle = try $ do
+  tit <- anyLine
+  under <- lookAhead anyChar
+  guard (under `elem` "=-~&+")
+  len <- length <$> many1 (char under)
+  let titLen = length title
+  guard (len >= titLen - 2 && len <= titlen + 2)
+  where
+    headers = "=-~&+"
+
+
 
 blockMacros :: AsciiDoc Blocks
 blockMacros = undefined
