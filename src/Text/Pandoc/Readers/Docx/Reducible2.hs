@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, GeneralizedNewtypeDeriving, PatternGuards #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, PatternGuards #-}
 
 import Text.Pandoc.Builder
 import Data.Monoid
@@ -94,8 +94,6 @@ spaceOutR r | (xfs, xs) <- sepModifiers r
             , (ys S.:> y) <- S.viewr $ unMany xs
             , isSpc y = (applyModifiers xfs $ Many ys) <> (singleton y)
 spaceOutR r = r
-
-
 
 combineManys :: (Modifiable a) => Many a -> Many a -> Many a
 combineManys x y =
