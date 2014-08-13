@@ -90,7 +90,6 @@ spaceOutL r | (xfs, xs) <- sepModifiers r
             , isSpc y = singleton y <> (applyModifiers xfs $ Many ys)
 spaceOutL r = r
 
-
 spaceOutR :: (Modifiable a) => Many a -> Many a
 spaceOutR r | (xfs, xs) <- sepModifiers r
             , (ys S.:> y) <- S.viewr $ unMany xs
@@ -131,5 +130,25 @@ instance (Modifiable a) => Monoid (Reducible a) where
                       (combineManys (fromList [x]) (fromList [y])) <>
                       (Many ys)
 
+type InlinesR = Reducible Inline
+type BlocksR  = Reducible Block
+
+singletonR :: a -> Reducible a
+singletonR a = Reducible $ singleton a
+
+toListR :: Reducible a -> [a]
+toListR rs = toList $ unReduce rs
+
+fromListR :: [a] -> Reducible a
+fromListR as = Reducible $ fromList as
+
+isNullR :: Reducible a -> Bool
+isNullR rs = isNull $ unReduce rs
+
+docR :: BlocksR -> Pandoc
+docR bs = doc $ unReduce bs
+
+-- This allows us to combine manys and perform proper reductions,
+-- without having to work with a Reducible
 (<++>) :: (Modifiable a) => Many a -> Many a -> Many a
 xs <++> ys = unReduce $ reducible xs <> reducible ys
