@@ -35,6 +35,7 @@ instance Modifiable Inline where
     (x S.:< xs) | S.null xs -> case x of
       (Emph _) -> SimpleModifier emph
       (Strong _) -> SimpleModifier strong
+      (SmallCaps _) -> SimpleModifier smallcaps
       (Strikeout _) -> SimpleModifier strikeout
       (Subscript _) -> SimpleModifier subscript
       (Superscript _) -> SimpleModifier superscript
@@ -46,6 +47,7 @@ instance Modifiable Inline where
     (x S.:< xs) | S.null xs -> case x of
       (Emph ils) -> fromList ils
       (Strong ils) -> fromList ils
+      (SmallCaps ils) -> fromList ils
       (Strikeout ils) -> fromList ils
       (Subscript ils) -> fromList ils
       (Superscript ils) -> fromList ils
