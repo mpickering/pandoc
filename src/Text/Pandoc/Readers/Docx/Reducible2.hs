@@ -9,9 +9,11 @@ module Text.Pandoc.Readers.Docx.Reducible2 ( Reducible(..)
 
 
 import Text.Pandoc.Builder
+import Text.Pandoc.Shared (extractSpaces)
 import Data.Monoid
 import Data.List
-import qualified Data.Sequence as S
+import Data.Sequence (ViewR(..), ViewL(..), viewl, viewr)
+import qualified Data.Sequence as Seq (null)
 import Control.Applicative
 import Data.String
 
@@ -22,12 +24,8 @@ data Modifier a = Modifier (a -> a)
 class (Eq a) => Modifiable a where
   modifier :: a -> Modifier a
   innards :: a -> a
-
-  spaceOutL :: a -> a
-  spaceOutL = id
-
-  spaceOutR :: a -> a
-  spaceOutR = id
+  spaceOut :: a -> a
+  spaceOut = id
 
 instance (Monoid a, Show a) => Show (Modifier a) where
   show (Modifier f) = show $ f mempty
@@ -37,8 +35,8 @@ instance (Monoid a, Eq a) => Eq (Modifier a) where
   (Modifier f) == (Modifier g) = (f mempty == g mempty)
 
 instance Modifiable Inlines where
-  modifier ils = case S.viewl (unMany ils) of
-    (x S.:< xs) | S.null xs -> case x of
+  modifier ils = case viewl (unMany ils) of
+    (x :< xs) | Seq.null xs -> case x of
       (Emph _)        -> Modifier emph
       (Strong _)      -> Modifier strong
       (SmallCaps _)   -> Modifier smallcaps
@@ -49,37 +47,25 @@ instance Modifiable Inlines where
       _               -> NullModifier
     _ -> NullModifier
 
-  innards ils = case S.viewl (unMany ils) of
-    (x S.:< xs) | S.null xs -> case x of
+  innards ils = case viewl (unMany ils) of
+    (x :< xs) | Seq.null xs -> case x of
       (Emph lst) -> fromList lst
       (Strong lst) -> fromList lst
       _        -> ils
     _          -> ils
 
-  spaceOutL ils =
-    let (fs, xs) = unstack ils
-    in
-     case S.viewl (unMany xs) of
-       (Space S.:< seq) -> space <> (spaceOutL $ stack fs $ Many seq)
-       _               -> ils
-
-  spaceOutR ils =
-    let (fs, xs) = unstack ils
-    in
-     case S.viewr (unMany xs) of
-       (seq S.:> Space) -> (spaceOutR $ stack fs $ Many seq) <> space
-       _               -> ils
+  spaceOut ils = extractSpaces id ils
 
 instance Modifiable Blocks where
-  modifier blks = case S.viewl (unMany blks) of
-    (x S.:< xs) | S.null xs -> case x of
+  modifier blks = case viewl (unMany blks) of
+    (x :< xs) | Seq.null xs -> case x of
       (BlockQuote _) -> Modifier blockQuote
       (Div attr _)   -> AttrModifier divWith attr
       _               -> NullModifier
     _ -> NullModifier
 
-  innards blks = case S.viewl (unMany blks) of
-    (x S.:< xs) | S.null xs -> case x of
+  innards blks = case viewl (unMany blks) of
+    (x :< xs) | Seq.null xs -> case x of
       (BlockQuote lst) -> fromList lst
       (Div attr lst)   -> fromList lst
       _        -> blks
@@ -113,7 +99,7 @@ combine x y =
      True  | isEmpty xs && isEmpty ys -> mempty
            | isEmpty xs -> stack y_remaining y
            | isEmpty ys -> stack x_remaining x
-           | otherwise -> (spaceOutR x) <> (spaceOutL y)
+           | otherwise -> (spaceOut x) <> (spaceOut y)
      False -> stack shared $
               combine
               (stack x_remaining xs)
