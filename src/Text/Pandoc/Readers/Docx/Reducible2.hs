@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances,
-    PatternGuards, GeneralizedNewtypeDeriving, OverloadedStrings #-}
+    PatternGuards, GeneralizedNewtypeDeriving, OverloadedStrings,
+    DeriveTraversable #-}
 
 module Text.Pandoc.Readers.Docx.Reducible2 ( Reducible(..)
                                            , RInlines
@@ -16,6 +17,8 @@ import Data.Sequence (ViewR(..), ViewL(..), viewl, viewr)
 import qualified Data.Sequence as Seq (null)
 import Control.Applicative
 import Data.String
+import Data.Traversable
+import Data.Foldable (Foldable)
 
 data Modifier a = Modifier (a -> a)
                 | AttrModifier (Attr -> a -> a) Attr
