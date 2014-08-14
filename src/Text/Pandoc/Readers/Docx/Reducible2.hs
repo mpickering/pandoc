@@ -1,6 +1,13 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances,
     PatternGuards, GeneralizedNewtypeDeriving, OverloadedStrings #-}
 
+module Text.Pandoc.Readers.Docx.Reducible2 ( Reducible(..)
+                                           , RInlines
+                                           , RBlocks
+                                           , red)
+       where
+
+
 import Text.Pandoc.Builder
 import Data.Monoid
 import Data.List
@@ -21,7 +28,7 @@ class (Eq a) => Modifiable a where
 
   spaceOutR :: a -> a
   spaceOutR = id
-    
+
 instance (Monoid a, Show a) => Show (Modifier a) where
   show (Modifier f) = show $ f mempty
   show (NullModifier) = "NullModifier"
@@ -63,6 +70,21 @@ instance Modifiable Inlines where
        (seq S.:> Space) -> (spaceOutR $ stack fs $ Many seq) <> space
        _               -> ils
 
+instance Modifiable Blocks where
+  modifier blks = case S.viewl (unMany blks) of
+    (x S.:< xs) | S.null xs -> case x of
+      (BlockQuote _) -> Modifier blockQuote
+      (Div attr _)   -> AttrModifier divWith attr
+      _               -> NullModifier
+    _ -> NullModifier
+
+  innards blks = case S.viewl (unMany blks) of
+    (x S.:< xs) | S.null xs -> case x of
+      (BlockQuote lst) -> fromList lst
+      (Div attr lst)   -> fromList lst
+      _        -> blks
+    _          -> blks
+
 unstack :: (Modifiable a) => a -> ([Modifier a], a)
 unstack ms = case modifier ms of
   NullModifier -> ([], ms)
@@ -93,8 +115,8 @@ combine x y =
            | isEmpty ys -> stack x_remaining x
            | otherwise -> (spaceOutR x) <> (spaceOutL y)
      False -> stack shared $
-              combine 
-              (stack x_remaining xs) 
+              combine
+              (stack x_remaining xs)
               (stack y_remaining ys)
 
 newtype Reducible a = Reducible {unReduce :: a}
@@ -102,9 +124,6 @@ newtype Reducible a = Reducible {unReduce :: a}
 
 red :: (Modifiable a) => a -> Reducible a
 red = Reducible
-
-instance IsString (Reducible Inlines) where
-  fromString = (red . text)
 
 instance (Monoid a, Modifiable a) => Monoid (Reducible a) where
   mappend r s = Reducible (unReduce r `combine` unReduce s)
@@ -116,3 +135,10 @@ instance Functor Reducible where
 instance Applicative Reducible where
   pure = Reducible
   (<*>) f r = Reducible $ (unReduce f) (unReduce r)
+
+type RInlines = Reducible Inlines
+
+type RBlocks = Reducible Blocks
+
+instance IsString (RInlines) where
+  fromString = (red . text)
