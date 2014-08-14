@@ -1,154 +1,101 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, PatternGuards #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances,
+    PatternGuards, GeneralizedNewtypeDeriving #-}
 
 import Text.Pandoc.Builder
 import Data.Monoid
-import Data.List (intersect, (\\))
+import Data.List
 import qualified Data.Sequence as S
+import Control.Applicative
 
-data Modifier a = SimpleModifier (a -> a)
-           | AttrModifier (Attr -> a -> a) Attr
-           | NullModifier
+data Modifier a = Modifier (a -> a)
+                | NullModifier
 
-instance (Show a) => Show (Modifier (Many a)) where
-  show (SimpleModifier x) =
-    reverse $ drop 3 $ reverse $ show $ head $ toList $ x $ fromList []
-  show (AttrModifier x attr) =
-    reverse $ drop 3 $ reverse $ show $ head $ toList $ x attr $ fromList []
-  show (NullModifier) = "NullContainer"
+class (Eq a) => Modifiable a where
+  modifier :: a -> Modifier a
+  innards :: a -> a
+
+  spaceOutL :: a -> a
+  spaceOutL = id
+
+  spaceOutR :: a -> a
+  spaceOutR = id
+    
+instance (Monoid a, Show a) => Show (Modifier a) where
+  show (Modifier f) = show $ f mempty
+  show (NullModifier) = "NullModifier"
 
 instance (Monoid a, Eq a) => Eq (Modifier a) where
-  (SimpleModifier x) == (SimpleModifier y) =
-    (x mempty) == (y mempty)
-  (AttrModifier x attr) == (AttrModifier y attr') =
-    (x attr mempty) == (y attr' mempty)
-  NullModifier == NullModifier = True
-  _ == _ = False
+  (Modifier f) == (Modifier g) = (f mempty == g mempty)
 
-class (Monoid (Many a), Eq (Many a), Eq a) => Modifiable a where
-  modifier :: Many a -> Modifier (Many a)
-  innards :: Many a -> Many a
-  isSpc :: a -> Bool
-  isSpc _ = False
-
-instance Modifiable Inline where
-  modifier ms = case S.viewl (unMany ms) of
+instance Modifiable Inlines where
+  modifier ils = case S.viewl (unMany ils) of
     (x S.:< xs) | S.null xs -> case x of
-      (Emph _) -> SimpleModifier emph
-      (Strong _) -> SimpleModifier strong
-      (SmallCaps _) -> SimpleModifier smallcaps
-      (Strikeout _) -> SimpleModifier strikeout
-      (Subscript _) -> SimpleModifier subscript
-      (Superscript _) -> SimpleModifier superscript
-      (Span attr _) -> AttrModifier spanWith attr
-      _             -> NullModifier
-    _  -> NullModifier
+      (Emph _) -> Modifier emph
+      (Strong _) -> Modifier strong
+      _        -> NullModifier
+    _ -> NullModifier
 
-  innards ms = case S.viewl (unMany ms) of
+  innards ils = case S.viewl (unMany ils) of
     (x S.:< xs) | S.null xs -> case x of
-      (Emph ils) -> fromList ils
-      (Strong ils) -> fromList ils
-      (SmallCaps ils) -> fromList ils
-      (Strikeout ils) -> fromList ils
-      (Subscript ils) -> fromList ils
-      (Superscript ils) -> fromList ils
-      (Span _ ils) -> fromList ils
-      _             -> mempty
-    _ -> ms
+      (Emph lst) -> fromList lst
+      (Strong lst) -> fromList lst
+      _        -> ils
+    _          -> ils
 
-  isSpc (Space) = True
-  isSpc _       = False
+  spaceOutL ils = case S.viewl (unMany ils) of
+    (Space S.:< xs) -> spaceOutL $ Many xs
+    _               -> ils
 
-instance Modifiable Block where
-  modifier ms = case S.viewl (unMany ms) of
-    (x S.:< xs) | S.null xs -> case x of
-      (BlockQuote _) -> SimpleModifier blockQuote
-      (Div attr _) -> AttrModifier divWith attr
-      _            -> NullModifier
+  spaceOutR ils = case S.viewr (unMany ils) of
+    (xs S.:> Space) -> spaceOutR $ Many xs
+    _               -> ils
 
-  innards ms = case S.viewl (unMany ms) of
-    (x S.:< xs) | S.null xs -> case x of
-      (BlockQuote bs) -> fromList bs
-      (Div _ bs) -> fromList bs
-      _          -> mempty
-    _            -> ms
+unstack :: (Modifiable a) => a -> ([Modifier a], a)
+unstack ms = case modifier ms of
+  NullModifier -> ([], ms)
+  _            -> (f : fs, ms') where
+    f = modifier ms
+    (fs, ms') = unstack $ innards ms
 
-sepModifiers :: (Modifiable a) => Many a -> ([Modifier (Many a)], (Many a))
-sepModifiers ms | NullModifier <- modifier ms = ([], ms)
-sepModifiers ms = (modf : modfs, ms')
-  where modf = modifier ms
-        (modfs, ms') = sepModifiers $ innards ms
+stack :: (Modifiable a) => [Modifier a] -> a -> a
+stack [] ms = ms
+stack (NullModifier : fs) ms = stack fs ms
+stack ((Modifier f) : fs) ms = f $ stack fs ms
 
-applyModifiers :: (Modifiable a) => [Modifier (Many a)] -> Many a -> Many a
-applyModifiers [] ms = ms
-applyModifiers (NullModifier:mfs) ms = applyModifiers mfs ms
-applyModifiers ((SimpleModifier mf):mfs) ms = applyModifiers mfs $ mf ms
-applyModifiers ((AttrModifier mf attr):mfs) ms = applyModifiers mfs $ mf attr ms
+isEmpty :: (Monoid a, Eq a) => a -> Bool
+isEmpty x = x == mempty
 
-spaceOutL :: (Modifiable a) => Many a -> Many a
-spaceOutL r | (xfs, xs) <- sepModifiers r
-            , (y S.:< ys) <- S.viewl $ unMany xs
-            , isSpc y = singleton y <> (applyModifiers xfs $ Many ys)
-spaceOutL r = r
-
-spaceOutR :: (Modifiable a) => Many a -> Many a
-spaceOutR r | (xfs, xs) <- sepModifiers r
-            , (ys S.:> y) <- S.viewr $ unMany xs
-            , isSpc y = (applyModifiers xfs $ Many ys) <> (singleton y)
-spaceOutR r = r
-
-combineManys :: (Modifiable a) => Many a -> Many a -> Many a
-combineManys x y =
-  let (xfs, xs) = sepModifiers x
-      (yfs, ys) = sepModifiers y
+combine :: (Monoid a, Modifiable a, Eq a) => a -> a -> a
+combine x y =
+  let (xfs, xs) = unstack x
+      (yfs, ys) = unstack y
       shared = xfs `intersect` yfs
       x_remaining = xfs \\ shared
       y_remaining = yfs \\ shared
   in
    case null shared of
-     True  | isNull xs && isNull ys -> mempty
-           | isNull xs -> applyModifiers y_remaining y
-           | isNull ys -> applyModifiers x_remaining x
+     True  | isEmpty xs && isEmpty ys -> mempty
+           | isEmpty xs -> stack y_remaining y
+           | isEmpty ys -> stack x_remaining x
            | otherwise -> (spaceOutR x) <> (spaceOutL y)
-     False -> applyModifiers shared $
-               (applyModifiers x_remaining xs) <++>
-               (applyModifiers y_remaining ys)
+     False -> stack shared $
+              combine 
+              (stack x_remaining xs) 
+              (stack y_remaining ys)
 
-newtype Reducible a = Reducible {unReduce :: Many a}
-             deriving (Eq, Show)
+newtype Reducible a = Reducible {unReduce :: a}
+                    deriving (Show, Eq)
 
-reducible :: (Modifiable a) => Many a -> Reducible a
-reducible = Reducible
+red :: (Modifiable a) => a -> Reducible a
+red = Reducible
 
-instance (Modifiable a) => Monoid (Reducible a) where
-  mempty = Reducible $ fromList []
-  mappend r s = case () of
-    _ | S.EmptyR <- S.viewr $ unMany $ unReduce r -> s
-      | S.EmptyL <- S.viewl $ unMany $ unReduce s -> r
-      | (xs S.:> x) <- S.viewr $ unMany $ unReduce r,
-        (y S.:< ys) <- S.viewl $ unMany $ unReduce s ->
-          Reducible $ (Many xs) <>
-                      (combineManys (fromList [x]) (fromList [y])) <>
-                      (Many ys)
+instance (Monoid a, Modifiable a) => Monoid (Reducible a) where
+  mappend r s = Reducible (unReduce r `combine` unReduce s)
+  mempty = Reducible mempty
 
-type InlinesR = Reducible Inline
-type BlocksR  = Reducible Block
+instance Functor Reducible where
+  fmap f r = Reducible $ f $ unReduce r
 
-singletonR :: a -> Reducible a
-singletonR a = Reducible $ singleton a
-
-toListR :: Reducible a -> [a]
-toListR rs = toList $ unReduce rs
-
-fromListR :: [a] -> Reducible a
-fromListR as = Reducible $ fromList as
-
-isNullR :: Reducible a -> Bool
-isNullR rs = isNull $ unReduce rs
-
-docR :: BlocksR -> Pandoc
-docR bs = doc $ unReduce bs
-
--- This allows us to combine manys and perform proper reductions,
--- without having to work with a Reducible
-(<++>) :: (Modifiable a) => Many a -> Many a -> Many a
-xs <++> ys = unReduce $ reducible xs <> reducible ys
+instance Applicative Reducible where
+  pure = Reducible
+  (<*>) f r = Reducible $ (unReduce f) (unReduce r)
