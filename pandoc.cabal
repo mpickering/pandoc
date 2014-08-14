@@ -306,6 +306,7 @@ Library
                    Text.Pandoc.Readers.Txt2Tags
   Other-Modules:   Text.Pandoc.Readers.Docx.Lists,
                    Text.Pandoc.Readers.Docx.Reducible,
+                   Text.Pandoc.Readers.Docx.Reducible2,
                    Text.Pandoc.Readers.Docx.Parse,
                    Text.Pandoc.Readers.Docx.Fonts
                    Text.Pandoc.Writers.Shared,

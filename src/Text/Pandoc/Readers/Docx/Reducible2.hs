@@ -36,6 +36,9 @@ instance (Monoid a, Show a) => Show (Modifier a) where
 
 instance (Monoid a, Eq a) => Eq (Modifier a) where
   (Modifier f) == (Modifier g) = (f mempty == g mempty)
+  (AttrModifier f attr) == (AttrModifier g attr') = (f attr mempty == g attr' mempty)
+  (NullModifier) == (NullModifier) = True
+  _ == _ = False
 
 instance Modifiable Inlines where
   modifier ils = case viewl (unMany ils) of
@@ -45,7 +48,7 @@ instance Modifiable Inlines where
       (SmallCaps _)   -> Modifier smallcaps
       (Strikeout _)   -> Modifier strikeout
       (Superscript _) -> Modifier superscript
-      (Subscript _)   -> Modifier superscript
+      (Subscript _)   -> Modifier subscript
       (Span attr _)   -> AttrModifier spanWith attr
       _               -> NullModifier
     _ -> NullModifier

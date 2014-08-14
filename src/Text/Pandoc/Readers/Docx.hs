@@ -373,6 +373,7 @@ parPartToInlines (Deletion _ author date runs) = do
       let attr = ("", ["deletion"], [("author", author), ("date", date)])
       return $ spanWith attr <$> ils
 parPartToInlines (BookMark _ anchor) | anchor `elem` dummyAnchors = return mempty
+parPartToInlines (BookMark _ anchor) = return mempty
 parPartToInlines (BookMark _ anchor) =
   -- We record these, so we can make sure not to overwrite
   -- user-defined anchor links with header auto ids.
@@ -471,13 +472,13 @@ trimLineBreaks ils
 trimLineBreaks ils = ils
 
 bodyPartToBlocks :: BodyPart -> DocxContext RBlocks
-bodyPartToBlocks (Paragraph pPr parparts)
-  | any isBlockCodeContainer (parStyleToContainers pPr) =
-    let
-      otherConts = filter (not . isBlockCodeContainer) (parStyleToContainers pPr)
-    in
-     return $
-     restack otherConts $ (red . codeBlock) (concatMap parPartToString parparts)
+-- bodyPartToBlocks (Paragraph pPr parparts)
+--   | any isBlockCodeContainer (parStyleToContainers pPr) =
+--     let
+--       otherConts = filter (not . isBlockCodeContainer) (parStyleToContainers pPr)
+--     in
+--      return $
+--      restack otherConts $ (red . codeBlock) (concatMap parPartToString parparts)
 bodyPartToBlocks (Paragraph pPr parparts)
   | any isHeaderContainer (parStyleToContainers pPr) = do
     ils <- -- (trimLineBreaks . normalizeSpaces) <$>
@@ -485,10 +486,11 @@ bodyPartToBlocks (Paragraph pPr parparts)
            (parPartsToInlines parparts)
     let hdrFun = head $ filter isHeaderContainer (parStyleToContainers pPr)
         (Header n attr _ :< _) = viewl $ unMany $ unReduce $ hdrFun mempty
-    let hdr = headerWith attr n <$> ils
+        hdr = headerWith attr n <$> ils
         hdr'= makeHeaderAnchor <$> unReduce hdr
     hs <- sequence $ toList hdr'
     return $ red $ fromList hs
+    -- return hdr
 bodyPartToBlocks (Paragraph pPr parparts) = do
   ils <- parPartsToInlines parparts
   dropIls <- gets docxDropCap
@@ -563,10 +565,10 @@ bodyToOutput (Body bps) = do
   let (metabps, blkbps) = sepBodyParts bps
   meta <- bodyPartsToMeta metabps
   blks <- mconcat <$> mapM bodyPartToBlocks blkbps
-  blks' <- walkM rewriteLink $ unReduce blks
+  -- blks' <- walkM rewriteLink $ unReduce blks
   mediaBag <- gets docxMediaBag
   return $ (meta,
-            blocksToDefinitions $ blocksToBullets $ toList blks',
+            blocksToDefinitions $ blocksToBullets $ toList $ unReduce blks,
             mediaBag)
 
 docxToOutput :: ReaderOptions -> Docx -> (Meta, [Block], MediaBag)
