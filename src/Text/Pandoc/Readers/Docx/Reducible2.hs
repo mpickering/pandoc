@@ -1,13 +1,15 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances,
-    PatternGuards, GeneralizedNewtypeDeriving #-}
+    PatternGuards, GeneralizedNewtypeDeriving, OverloadedStrings #-}
 
 import Text.Pandoc.Builder
 import Data.Monoid
 import Data.List
 import qualified Data.Sequence as S
 import Control.Applicative
+import Data.String
 
 data Modifier a = Modifier (a -> a)
+                | AttrModifier (Attr -> a -> a) Attr
                 | NullModifier
 
 class (Eq a) => Modifiable a where
@@ -30,9 +32,14 @@ instance (Monoid a, Eq a) => Eq (Modifier a) where
 instance Modifiable Inlines where
   modifier ils = case S.viewl (unMany ils) of
     (x S.:< xs) | S.null xs -> case x of
-      (Emph _) -> Modifier emph
-      (Strong _) -> Modifier strong
-      _        -> NullModifier
+      (Emph _)        -> Modifier emph
+      (Strong _)      -> Modifier strong
+      (SmallCaps _)   -> Modifier smallcaps
+      (Strikeout _)   -> Modifier strikeout
+      (Superscript _) -> Modifier superscript
+      (Subscript _)   -> Modifier superscript
+      (Span attr _)   -> AttrModifier spanWith attr
+      _               -> NullModifier
     _ -> NullModifier
 
   innards ils = case S.viewl (unMany ils) of
@@ -42,13 +49,19 @@ instance Modifiable Inlines where
       _        -> ils
     _          -> ils
 
-  spaceOutL ils = case S.viewl (unMany ils) of
-    (Space S.:< xs) -> spaceOutL $ Many xs
-    _               -> ils
+  spaceOutL ils =
+    let (fs, xs) = unstack ils
+    in
+     case S.viewl (unMany xs) of
+       (Space S.:< seq) -> space <> (spaceOutL $ stack fs $ Many seq)
+       _               -> ils
 
-  spaceOutR ils = case S.viewr (unMany ils) of
-    (xs S.:> Space) -> spaceOutR $ Many xs
-    _               -> ils
+  spaceOutR ils =
+    let (fs, xs) = unstack ils
+    in
+     case S.viewr (unMany xs) of
+       (seq S.:> Space) -> (spaceOutR $ stack fs $ Many seq) <> space
+       _               -> ils
 
 unstack :: (Modifiable a) => a -> ([Modifier a], a)
 unstack ms = case modifier ms of
@@ -61,6 +74,7 @@ stack :: (Modifiable a) => [Modifier a] -> a -> a
 stack [] ms = ms
 stack (NullModifier : fs) ms = stack fs ms
 stack ((Modifier f) : fs) ms = f $ stack fs ms
+stack ((AttrModifier f attr) : fs) ms = f attr $ stack fs ms
 
 isEmpty :: (Monoid a, Eq a) => a -> Bool
 isEmpty x = x == mempty
@@ -88,6 +102,9 @@ newtype Reducible a = Reducible {unReduce :: a}
 
 red :: (Modifiable a) => a -> Reducible a
 red = Reducible
+
+instance IsString (Reducible Inlines) where
+  fromString = (red . text)
 
 instance (Monoid a, Modifiable a) => Monoid (Reducible a) where
   mappend r s = Reducible (unReduce r `combine` unReduce s)
