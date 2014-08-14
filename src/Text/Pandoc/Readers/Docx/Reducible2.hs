@@ -54,7 +54,8 @@ instance Modifiable Inlines where
       _        -> ils
     _          -> ils
 
-  spaceOut ils = extractSpaces id ils
+  spaceOut ils = extractSpaces (stack fs) ils'
+    where (fs, ils') = unstack ils
 
 instance Modifiable Blocks where
   modifier blks = case viewl (unMany blks) of
