@@ -450,8 +450,8 @@ cellToBlocks (Cell bps) = concatMapM bodyPartToBlocks bps
 rowToBlocksList :: Row -> DocxContext [[Block]]
 rowToBlocksList (Row cells) = mapM cellToBlocks cells
 
-isBlockCodeContainer :: Container Block -> Bool
-isBlockCodeContainer (Container f) | CodeBlock _ _ <- f [] = True
+isBlockCodeContainer :: (RBlocks -> RBlocks) -> Bool
+isBlockCodeContainer f | CodeBlock _ _ <- f [] = True
 isBlockCodeContainer _ = False
 
 isHeaderContainer :: Container Block -> Bool
@@ -465,7 +465,7 @@ trimLineBreaks ils
   | (LineBreak : ils') <- reverse ils = trimLineBreaks (reverse ils')
 trimLineBreaks ils = ils
 
-bodyPartToBlocks :: BodyPart -> DocxContext [Block]
+bodyPartToBlocks :: BodyPart -> DocxContext RBlocks
 bodyPartToBlocks (Paragraph pPr parparts)
   | any isBlockCodeContainer (parStyleToContainers pPr) =
     let
