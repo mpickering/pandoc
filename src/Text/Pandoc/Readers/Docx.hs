@@ -336,10 +336,12 @@ runToInlines (Run rs runElems)
   | otherwise =
       return $
       restack (runStyleToContainers rs) (runElemToInlines runElems)
-runToInlines (Footnote bps) =
-  bodyPartToBlocks bps >>= (\blks -> return $ note <$> blks)
+runToInlines (Footnote bps) = do
+  blksList <- mapM bodyPartToBlocks bps
+  return $ note <$> mconcat blksList
 runToInlines (Endnote bps) =
-  bodyPartToBlocks bps >>= (\blks -> return $ note <$> blks)
+  blksList <- mapM bodyPartToBlocks bps
+  return $ note <$> mconcat blksList
 runToInlines (InlineDrawing fp bs) = do
   mediaBag <- gets docxMediaBag
   modify $ \s -> s { docxMediaBag = insertMedia fp Nothing bs mediaBag }
@@ -351,19 +353,19 @@ parPartToInlines (PlainRun r) = runToInlines r
 parPartToInlines (Insertion _ author date runs) = do
   opts <- asks docxOptions
   case readerTrackChanges opts of
-    AcceptChanges -> runToInlines runs
+    AcceptChanges -> mconcat <$> mapM runToInlines runs
     RejectChanges -> return mempty
     AllChanges    -> do
-      ils <- runToInlines runs
+      ils <- mconcat <$> mapM runToInlines runs
       let attr = ("", ["insertion"], [("author", author), ("date", date)])
       return $ spanWith attr <$> ils
 parPartToInlines (Deletion _ author date runs) = do
   opts <- asks docxOptions
   case readerTrackChanges opts of
     AcceptChanges -> return mempty
-    RejectChanges -> runToInlines runs
+    RejectChanges -> mconcat <$> mapM runToInlines runs
     AllChanges    -> do
-      ils <- runToInlines runs
+      ils <- mconcat <$> mapM runToInlines runs
       let attr = ("", ["deletion"], [("author", author), ("date", date)])
       return $ spanWith attr <$> ils
 parPartToInlines (BookMark _ anchor) | anchor `elem` dummyAnchors = return []
@@ -395,10 +397,10 @@ parPartToInlines (Drawing fp bs) = do
   modify $ \s -> s { docxMediaBag = insertMedia fp Nothing bs mediaBag }
   return $ red $ image fp "" ""
 parPartToInlines (InternalHyperLink anchor runs) = do
-  ils <- runToInlines runs
+  ils <- mconcat <$> mapM runToInlines runs
   return $ link ('#' : anchor) "" <$> ils
 parPartToInlines (ExternalHyperLink target runs) = do
-  ils <- runToInlines runs
+  ils <- mconcat <$> mapM runToInlines runs
   return $ link target "" <$> ils
 parPartToInlines (PlainOMath exps) = do
   return $ red $ math $ writeTeX exps
@@ -439,10 +441,8 @@ makeHeaderAnchor (Header n (_, classes, kvs) ils) =
 makeHeaderAnchor blk = return blk
 
 
-parPartsToInlines :: [ParPart] -> DocxContext [Inline]
-parPartsToInlines parparts = do
-  ils <- concatMapM parPartToInlines parparts
-  return $ reduceList $ ils
+parPartsToInlines :: [ParPart] -> DocxContext RInlines
+parPartsToInlines parparts = mconcat <$> mapM parPartToInlines parparts
 
 cellToBlocks :: Cell -> DocxContext [Block]
 cellToBlocks (Cell bps) = concatMapM bodyPartToBlocks bps
