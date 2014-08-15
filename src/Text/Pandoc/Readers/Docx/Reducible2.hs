@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances,
     PatternGuards, GeneralizedNewtypeDeriving, OverloadedStrings,
-    DeriveTraversable #-}
+    DeriveTraversable, DeriveFunctor, ViewPatterns #-}
 
 module Text.Pandoc.Readers.Docx.Reducible2 ( Reducible(..)
                                            , RInlines
@@ -19,39 +19,45 @@ import Control.Applicative
 import Data.String
 import Data.Traversable
 import Data.Foldable (Foldable)
+import Control.Applicative
 
-data Modifier a = Modifier (a -> a)
-                | AttrModifier (Attr -> a -> a) Attr
-                | NullModifier
+newtype Modifier a = Modifier (Maybe (Transformation a))
+
+type Transformation a = a -> a
+
+unMod :: Modifier a -> Maybe (Transformation a)
+unMod (Modifier f) = f
+
+instance (Monoid a, Eq a) => (Eq  (Transformation a)) where
+  f == g = f mempty == g mempty
+
+modifier :: (a -> a) -> Modifier a
+modifier f = Modifier (Just f)
 
 class (Eq a) => Modifiable a where
-  modifier :: a -> Modifier a
+  getModifier :: a -> Modifier a
   innards :: a -> a
   spaceOut :: a -> a
   spaceOut = id
 
 instance (Monoid a, Show a) => Show (Modifier a) where
-  show (Modifier f) = show $ f mempty
-  show (NullModifier) = "NullModifier"
+  show (Modifier f) = show  (f <*> Just mempty)
 
 instance (Monoid a, Eq a) => Eq (Modifier a) where
-  (Modifier f) == (Modifier g) = (f mempty == g mempty)
-  (AttrModifier f attr) == (AttrModifier g attr') = (f attr mempty == g attr' mempty)
-  (NullModifier) == (NullModifier) = True
-  _ == _ = False
+  (Modifier f) == (Modifier g) = f == g
 
 instance Modifiable Inlines where
-  modifier ils = case viewl (unMany ils) of
+  getModifier ils = case viewl (unMany ils) of
     (x :< xs) | Seq.null xs -> case x of
-      (Emph _)        -> Modifier emph
-      (Strong _)      -> Modifier strong
-      (SmallCaps _)   -> Modifier smallcaps
-      (Strikeout _)   -> Modifier strikeout
-      (Superscript _) -> Modifier superscript
-      (Subscript _)   -> Modifier subscript
-      (Span attr _)   -> AttrModifier spanWith attr
-      _               -> NullModifier
-    _ -> NullModifier
+      (Emph _)        -> modifier emph
+      (Strong _)      -> modifier strong
+      (SmallCaps _)   -> modifier smallcaps
+      (Strikeout _)   -> modifier strikeout
+      (Superscript _) -> modifier superscript
+      (Subscript _)   -> modifier subscript
+      (Span attr _)   -> modifier (spanWith attr)
+      _               -> Modifier Nothing
+    _ -> Modifier Nothing
 
   innards ils = case viewl (unMany ils) of
     (x :< xs) | Seq.null xs -> case x of
@@ -82,12 +88,12 @@ instance Modifiable Inlines where
      <> right)
 
 instance Modifiable Blocks where
-  modifier blks = case viewl (unMany blks) of
+  getModifier blks = case viewl (unMany blks) of
     (x :< xs) | Seq.null xs -> case x of
-      (BlockQuote _) -> Modifier blockQuote
-      (Div attr _)   -> AttrModifier divWith attr
-      _               -> NullModifier
-    _ -> NullModifier
+      (BlockQuote _) -> modifier blockQuote
+      (Div attr _)   -> modifier (divWith attr)
+      _               -> Modifier Nothing
+    _ -> Modifier Nothing
 
   innards blks = case viewl (unMany blks) of
     (x :< xs) | Seq.null xs -> case x of
@@ -96,18 +102,16 @@ instance Modifiable Blocks where
       _        -> blks
     _          -> blks
 
-unstack :: (Modifiable a) => a -> ([Modifier a], a)
-unstack ms = case modifier ms of
-  NullModifier -> ([], ms)
-  _            -> (f : fs, ms') where
-    f = modifier ms
-    (fs, ms') = unstack $ innards ms
+-- unfold
+unstack :: (Modifiable a) => a -> ([Transformation a], a)
+unstack ms = unfoldAccum uf ms []
+  where
+    uf b = flip (,) (innards b) <$> unMod (getModifier b)
 
-stack :: (Modifiable a) => [Modifier a] -> a -> a
+-- fold
+stack :: (Modifiable a) => [Transformation a] -> a -> a
 stack [] ms = ms
-stack (NullModifier : fs) ms = stack fs ms
-stack ((Modifier f) : fs) ms = f $ stack fs ms
-stack ((AttrModifier f attr) : fs) ms = f attr $ stack fs ms
+stack (f : fs) ms = f $ stack fs ms
 
 isEmpty :: (Monoid a, Eq a) => a -> Bool
 isEmpty x = x == mempty
@@ -159,3 +163,9 @@ type RBlocks = Reducible Blocks
 
 instance IsString (RInlines) where
   fromString = (red . text)
+
+unfoldAccum      :: (b -> Maybe (a, b)) -> b -> [a] -> ([a], b)
+unfoldAccum f b acc  =
+  case f b of
+    Just (a,new_b) ->  unfoldAccum f new_b (a:acc)
+    Nothing        -> (acc, b)
