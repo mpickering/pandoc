@@ -10,7 +10,7 @@ module Text.Pandoc.Readers.Docx.Reducible2 ( Reducible(..)
 
 
 import Text.Pandoc.Builder
-import Text.Pandoc.Shared (extractSpaces)
+-- import Text.Pandoc.Shared (extractSpaces)
 import Data.Monoid
 import Data.List
 import Data.Sequence (ViewR(..), ViewL(..), viewl, viewr)
@@ -55,13 +55,31 @@ instance Modifiable Inlines where
 
   innards ils = case viewl (unMany ils) of
     (x :< xs) | Seq.null xs -> case x of
-      (Emph lst) -> fromList lst
-      (Strong lst) -> fromList lst
+      (Emph lst)        -> fromList lst
+      (Strong lst)      -> fromList lst
+      (SmallCaps lst)   -> fromList lst
+      (Strikeout lst)   -> fromList lst
+      (Superscript lst) -> fromList lst
+      (Subscript lst)   -> fromList lst
+      (Span _ lst)      -> fromList lst
       _        -> ils
     _          -> ils
 
-  spaceOut ils = extractSpaces (stack fs) ils'
-    where (fs, ils') = unstack ils
+  -- spaceOut ils = extractSpaces (stack fs) ils'
+  --   where (fs, ils') = unstack ils
+
+  spaceOut ils =
+    let (fs, ils') = unstack ils
+        contents = unMany ils'
+        left  = case viewl contents of
+          (Space :< _) -> space
+          _            -> mempty
+        right = case viewr contents of
+          (_ :> Space) -> space
+          _            -> mempty in
+    (left <>
+     (stack fs $ trimInlines . Many $ contents)
+     <> right)
 
 instance Modifiable Blocks where
   modifier blks = case viewl (unMany blks) of
