@@ -109,7 +109,7 @@ readDocx opts bytes =
 
 data DState = DState { docxAnchorMap :: M.Map String String
                      , docxMediaBag      :: MediaBag
-                     , docxDropCap       :: RInlines
+                     , docxDropCap       :: Inlines
                      }
 
 instance Default DState where
@@ -198,13 +198,13 @@ fixAuthors (MetaBlocks blks) =
           g _          = MetaInlines []
 fixAuthors mv = mv
 
-runStyleToContainers :: RunStyle -> [(RInlines -> RInlines)]
+runStyleToContainers :: RunStyle -> [(Inlines -> Inlines)]
 runStyleToContainers rPr =
-  let spanClassToContainers :: String -> [(RInlines -> RInlines)]
+  let spanClassToContainers :: String -> [(Inlines -> Inlines)]
       spanClassToContainers s | s `elem` codeSpans =
-        [\rils -> code <$> (stringify <$> rils)]
+        [code . stringify]
       spanClassToContainers s | s `elem` spansToKeep =
-        [\rils -> spanWith ("", [s], []) <$> rils]
+        [spanWith ("", [s], [])]
       spanClassToContainers  _     = []
 
       classContainers = case rStyle rPr of
@@ -216,10 +216,7 @@ runStyleToContainers rPr =
       resolveFmt _ (Just False) = False
       resolveFmt bool Nothing   = bool
 
-      formatters = mapMaybe
-                   (\f -> if (isJust f)
-                          then Just (\ril -> (fromJust f) <$> ril)
-                          else Nothing)
+      formatters = mapMaybe id
                    [ if resolveFmt
                         (rStyle rPr `elem` [Just "Strong", Just "Bold"])
                         (isBold rPr)
@@ -244,11 +241,11 @@ runStyleToContainers rPr =
   in
    classContainers ++ formatters
 
-parStyleToContainers :: ParagraphStyle -> [(RBlocks -> RBlocks)]
+parStyleToContainers :: ParagraphStyle -> [(Blocks -> Blocks)]
 parStyleToContainers pPr | (c:cs) <- pStyle pPr, Just n <- isHeaderClass c =
   let attr = ("", delete ("Heading" ++ show n) cs, [])
   in
-   [\_ -> headerWith attr n <$> mempty]
+   [\_ -> headerWith attr n ]
 parStyleToContainers pPr | (c:cs) <- pStyle pPr, c `elem` divsToKeep =
   let pPr' = pPr { pStyle = cs }
   in
@@ -373,7 +370,6 @@ parPartToInlines (Deletion _ author date runs) = do
       let attr = ("", ["deletion"], [("author", author), ("date", date)])
       return $ spanWith attr <$> ils
 parPartToInlines (BookMark _ anchor) | anchor `elem` dummyAnchors = return mempty
-parPartToInlines (BookMark _ anchor) = return mempty
 parPartToInlines (BookMark _ anchor) =
   -- We record these, so we can make sure not to overwrite
   -- user-defined anchor links with header auto ids.
@@ -472,25 +468,25 @@ trimLineBreaks ils
 trimLineBreaks ils = ils
 
 bodyPartToBlocks :: BodyPart -> DocxContext RBlocks
--- bodyPartToBlocks (Paragraph pPr parparts)
---   | any isBlockCodeContainer (parStyleToContainers pPr) =
---     let
---       otherConts = filter (not . isBlockCodeContainer) (parStyleToContainers pPr)
---     in
---      return $
---      restack otherConts $ (red . codeBlock) (concatMap parPartToString parparts)
+bodyPartToBlocks (Paragraph pPr parparts)
+  | any isBlockCodeContainer (parStyleToContainers pPr) =
+    let
+      otherConts = filter (not . isBlockCodeContainer) (parStyleToContainers pPr)
+    in
+     return $
+     restack otherConts $ (red . codeBlock) (concatMap parPartToString parparts)
 bodyPartToBlocks (Paragraph pPr parparts)
   | any isHeaderContainer (parStyleToContainers pPr) = do
     ils <- -- (trimLineBreaks . normalizeSpaces) <$>
+           (red . fromList . normalizeSpaces .toList . unReduce) <$>
            local (\s -> s{docxInHeaderBlock = True})
            (parPartsToInlines parparts)
     let hdrFun = head $ filter isHeaderContainer (parStyleToContainers pPr)
         (Header n attr _ :< _) = viewl $ unMany $ unReduce $ hdrFun mempty
-        hdr = headerWith attr n <$> ils
+    let hdr = headerWith attr n <$> ils
         hdr'= makeHeaderAnchor <$> unReduce hdr
     hs <- sequence $ toList hdr'
     return $ red $ fromList hs
-    -- return hdr
 bodyPartToBlocks (Paragraph pPr parparts) = do
   ils <- parPartsToInlines parparts
   dropIls <- gets docxDropCap
@@ -565,10 +561,10 @@ bodyToOutput (Body bps) = do
   let (metabps, blkbps) = sepBodyParts bps
   meta <- bodyPartsToMeta metabps
   blks <- mconcat <$> mapM bodyPartToBlocks blkbps
-  -- blks' <- walkM rewriteLink $ unReduce blks
+  blks' <- walkM rewriteLink $ unReduce blks
   mediaBag <- gets docxMediaBag
   return $ (meta,
-            blocksToDefinitions $ blocksToBullets $ toList $ unReduce blks,
+            blocksToDefinitions $ blocksToBullets $ toList blks',
             mediaBag)
 
 docxToOutput :: ReaderOptions -> Docx -> (Meta, [Block], MediaBag)

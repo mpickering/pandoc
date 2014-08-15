@@ -130,6 +130,12 @@ combine x y =
               (stack x_remaining xs)
               (stack y_remaining ys)
 
+(<+>) :: (Monoid a, Modifiable a, Eq a) => a -> a -> a
+x <+> y = combine x y
+
+concatReduce :: (Monoid a, Modifiable a) => [a] -> a
+concatReduce xs = foldl combine mempty xs
+
 newtype Reducible a = Reducible {unReduce :: a}
                     deriving (Show, Eq)
 
